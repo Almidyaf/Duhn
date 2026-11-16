@@ -4,6 +4,7 @@ export function poolSsl(connectionString: string): { rejectUnauthorized: false }
   try {
     const url = new URL(connectionString);
     if (['localhost', '127.0.0.1'].includes(url.hostname)) return undefined;
+    if (url.hostname.endsWith('.hyperdrive.local')) return undefined;
     if (url.searchParams.get('sslmode') === 'disable') return undefined;
     return { rejectUnauthorized: false };
   } catch {
@@ -19,7 +20,13 @@ export function dbSchema(connectionString: string): string {
     }
     return configured;
   }
-  return poolSsl(connectionString) ? 'duhn' : 'public';
+  if (poolSsl(connectionString)) return 'duhn';
+  try {
+    if (new URL(connectionString).hostname.endsWith('.hyperdrive.local')) return 'duhn';
+  } catch {
+    // ignore
+  }
+  return 'public';
 }
 
 export function poolOptions(connectionString: string): string | undefined {
@@ -27,22 +34,44 @@ export function poolOptions(connectionString: string): string | undefined {
   return schema !== 'public' ? `-c search_path=${schema},public` : undefined;
 }
 
+type CfContext = {
+  env?: { HYPERDRIVE?: { connectionString?: string } };
+  __duhnPool?: Pool;
+};
+
+function getCfContext(): CfContext | undefined {
+  return (globalThis as Record<symbol, CfContext | undefined>)[
+    Symbol.for('__cloudflare-context__')
+  ];
+}
+
 const shared = globalThis as typeof globalThis & { duhnPool?: Pool };
 export function getPool() {
-  const connectionString = process.env.DATABASE_URL;
+  const cf = getCfContext();
+  const hyperdriveUrl = cf?.env?.HYPERDRIVE?.connectionString;
+  const connectionString = hyperdriveUrl || process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is required.');
-  if (!shared.duhnPool) {
-    shared.duhnPool = new Pool({
+
+  const createPool = () => {
+    const pool = new Pool({
       connectionString,
-      ssl: poolSsl(connectionString),
+      ssl: hyperdriveUrl ? undefined : poolSsl(connectionString),
       options: poolOptions(connectionString),
-      max: 8,
+      max: cf ? 5 : 8,
       connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
       statement_timeout: 10000,
       application_name: 'duhn-web',
     });
-    shared.duhnPool.on('error', () => console.error('Database pool connection error.'));
+    pool.on('error', () => console.error('Database pool connection error.'));
+    return pool;
+  };
+
+  if (cf) {
+    return (cf.__duhnPool ??= createPool());
+  }
+  if (!shared.duhnPool) {
+    shared.duhnPool = createPool();
   }
   return shared.duhnPool;
 }
