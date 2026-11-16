@@ -23,5 +23,8 @@ export function createAuth(allowBootstrapSignup = false) {
 
 let instance: ReturnType<typeof createAuth> | undefined;
 export function getAuth() {
+  if (Symbol.for('__cloudflare-context__') in globalThis) {
+    return createAuth();
+  }
   return (instance ??= createAuth());
 }

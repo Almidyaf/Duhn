@@ -138,7 +138,9 @@ export function getPool() {
   if (!connectionString) throw new Error('DATABASE_URL is required.');
 
   const createPool = () => {
-    const schema = dbSchema(connectionString);
+    const schema = hyperdriveUrl
+      ? process.env.DB_SCHEMA?.trim() || 'duhn'
+      : dbSchema(connectionString);
     const pool = new Pool({
       connectionString,
       ssl: hyperdriveUrl ? undefined : poolSsl(connectionString),
