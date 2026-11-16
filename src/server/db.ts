@@ -170,11 +170,18 @@ export function getPool() {
 }
 
 export function getDynamicPool(): Pool {
-  return new Proxy({} as Pool, {
+  const target = Object.create(Pool.prototype) as Pool;
+  return new Proxy(target, {
     get(_target, prop) {
       const pool = getPool();
       const value = Reflect.get(pool, prop, pool);
       return typeof value === 'function' ? value.bind(pool) : value;
+    },
+    has(_target, prop) {
+      return prop in getPool();
+    },
+    getPrototypeOf() {
+      return Pool.prototype;
     },
   });
 }
