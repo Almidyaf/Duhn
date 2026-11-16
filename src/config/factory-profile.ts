@@ -5,5 +5,6 @@ export const factoryProfile = {
   address: 'Jl. Raya Puncak No.km.84, Tugu Sel., Kec. Cisarua, Kabupaten Bogor, Jawa Barat 16750',
   location: 'بونشاك، بوغور، جاوة الغربية، إندونيسيا',
   mapsUrl: 'https://maps.app.goo.gl/5pUFworKB7neagBN7?g_st=iwb',
+  websiteUrl: 'https://www.almidyaf.com',
   timezone: 'Asia/Jakarta',
 } as const;

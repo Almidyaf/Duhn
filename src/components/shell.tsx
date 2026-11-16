@@ -6,9 +6,11 @@ import {
   Droplets,
   Settings,
   ChevronLeft,
+  Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Member } from '@/server/members';
+import { factoryProfile } from '@/config/factory-profile';
 import { Logout } from './logout';
 import { Notifications } from './notifications';
 import { ui } from '@/locales/ar/ui';
@@ -64,6 +66,10 @@ export function Shell({
           <div>
             <strong>{ui.brandSubtitle}</strong>
             <small>{w.environment}</small>
+            <a className="sidebar-site-link" href={factoryProfile.websiteUrl}>
+              <Globe size={12} />
+              <span>{ui.officialSite}</span>
+            </a>
           </div>
         </div>
       </aside>

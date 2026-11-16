@@ -79,6 +79,8 @@ export const ui = {
   appError: 'تعذر فتح الصفحة',
   appErrorText: 'لم نتمكن من جلب البيانات الآن. أعد المحاولة بعد قليل.',
   skip: 'انتقل إلى المحتوى',
+  officialSite: 'الموقع الرسمي للشركة',
+  backToOfficialSite: 'العودة إلى الموقع الرسمي',
   categories: {
     oven: 'فرن',
     fermentation_vessel: 'وعاء تخمير',

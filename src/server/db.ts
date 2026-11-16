@@ -1,11 +1,41 @@
 import { Pool, type PoolClient } from 'pg';
 
+export function poolSsl(connectionString: string): { rejectUnauthorized: false } | undefined {
+  try {
+    const url = new URL(connectionString);
+    if (['localhost', '127.0.0.1'].includes(url.hostname)) return undefined;
+    if (url.searchParams.get('sslmode') === 'disable') return undefined;
+    return { rejectUnauthorized: false };
+  } catch {
+    return undefined;
+  }
+}
+
+export function dbSchema(connectionString: string): string {
+  const configured = process.env.DB_SCHEMA?.trim();
+  if (configured) {
+    if (!/^[a-z_][a-z0-9_]*$/.test(configured)) {
+      throw new Error('DB_SCHEMA must be a valid lowercase PostgreSQL identifier.');
+    }
+    return configured;
+  }
+  return poolSsl(connectionString) ? 'duhn' : 'public';
+}
+
+export function poolOptions(connectionString: string): string | undefined {
+  const schema = dbSchema(connectionString);
+  return schema !== 'public' ? `-c search_path=${schema},public` : undefined;
+}
+
 const shared = globalThis as typeof globalThis & { duhnPool?: Pool };
 export function getPool() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is required.');
   if (!shared.duhnPool) {
     shared.duhnPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
+      ssl: poolSsl(connectionString),
+      options: poolOptions(connectionString),
       max: 8,
       connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000,

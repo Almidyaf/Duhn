@@ -5,8 +5,10 @@ import {
   ArrowLeft,
   GitBranch,
   ShieldCheck,
+  Globe,
 } from 'lucide-react';
 import { LoginForm } from '@/components/login-form';
+import { factoryProfile } from '@/config/factory-profile';
 import { ui } from '@/locales/ar/ui';
 import { workflowUi as w } from '@/locales/ar/workflow';
 export const metadata = { title: ui.login };
@@ -29,7 +31,13 @@ export default function LoginPage() {
           <p className="muted">{ui.loginLead}</p>
           <LoginForm />
         </div>
-        <small className="login-edition">{w.environment}</small>
+        <div className="login-panel-foot">
+          <small className="login-edition">{w.environment}</small>
+          <a className="login-back-link" href={factoryProfile.websiteUrl}>
+            <Globe size={14} />
+            <span>{ui.backToOfficialSite}</span>
+          </a>
+        </div>
       </section>
       <aside className="login-art">
         <div>

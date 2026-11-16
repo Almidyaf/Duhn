@@ -2,13 +2,25 @@ import './env';
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
+import { dbSchema, poolOptions, poolSsl } from '../src/server/db';
 
 export async function migrate() {
-  if (!process.env.MIGRATION_DATABASE_URL) throw new Error('MIGRATION_DATABASE_URL is required.');
-  const pool = new Pool({ connectionString: process.env.MIGRATION_DATABASE_URL, max: 1 });
+  const connectionString = process.env.MIGRATION_DATABASE_URL || process.env.DIRECT_URL;
+  if (!connectionString) throw new Error('MIGRATION_DATABASE_URL or DIRECT_URL is required.');
+  const schema = dbSchema(connectionString);
+  const pool = new Pool({
+    connectionString,
+    max: 1,
+    ssl: poolSsl(connectionString),
+    options: poolOptions(connectionString),
+  });
   const client = await pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock(72703108)');
+    if (schema !== 'public') {
+      await client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+      await client.query(`SET search_path TO "${schema}", public`);
+    }
     await client.query(
       'CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
     );
@@ -25,9 +37,15 @@ export async function migrate() {
           throw new Error(`Applied migration changed: ${name}`);
         continue;
       }
+      const statement =
+        schema === 'public'
+          ? sql
+          : sql
+              .replaceAll('SET search_path=pg_catalog,public', `SET search_path=pg_catalog,${schema}`)
+              .replaceAll('public.', `${schema}.`);
       await client.query('BEGIN');
       try {
-        await client.query(sql);
+        await client.query(statement);
         await client.query('INSERT INTO schema_migrations(name,checksum) VALUES ($1,$2)', [
           name,
           checksum,

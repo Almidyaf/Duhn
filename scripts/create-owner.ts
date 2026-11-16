@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { createAuth } from '../src/server/auth';
-import { getPool } from '../src/server/db';
+import { getPool, poolOptions, poolSsl } from '../src/server/db';
 
 async function main() {
   const { values } = parseArgs({
@@ -52,7 +52,14 @@ async function main() {
   email = z.email().parse(email.trim());
   name = z.string().trim().min(2).max(120).parse(name);
   z.string().min(12).max(128).parse(password);
-  const pool = new Pool({ connectionString: process.env.MIGRATION_DATABASE_URL, max: 1 });
+  const connectionString = process.env.MIGRATION_DATABASE_URL || process.env.DIRECT_URL;
+  if (!connectionString) throw new Error('MIGRATION_DATABASE_URL or DIRECT_URL is required.');
+  const pool = new Pool({
+    connectionString,
+    max: 1,
+    ssl: poolSsl(connectionString),
+    options: poolOptions(connectionString),
+  });
   const client = await pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock(72703109)');
