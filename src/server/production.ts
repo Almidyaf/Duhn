@@ -130,11 +130,10 @@ export async function listProductionOrders(member: Member, query: { q: string; c
   );
   const items = result.rows.slice(0, 25);
   const last = items.at(-1);
-  const time = (await getPool().query(`SELECT ${date('clock_timestamp()')} AS now`)).rows[0].now;
   return {
     items,
     next_cursor: result.rows.length > 25 && last ? { at: last.created_at, id: last.id } : null,
-    server_time: time,
+    server_time: new Date().toISOString(),
   };
 }
 

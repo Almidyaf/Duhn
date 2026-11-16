@@ -20,38 +20,38 @@ const topics: Record<string, string> = {
 };
 export async function syncNotifications(member: Member) {
   requireAssetAccess(member);
+  const topicEntries = Object.entries(topics);
   await transaction(async (client) => {
-    const events = await client.query(
-      `SELECT e.*,p.name AS product_name,o.id AS order_id,o.code::text AS order_code,
-    f.id AS batch_id,f.code::text AS batch_code,r.code::text AS receipt_code FROM outbox_events e
-    LEFT JOIN production_orders o ON o.id=coalesce((e.payload->>'order_id')::uuid,e.entity_id)
-    LEFT JOIN fermentations f ON f.id=CASE WHEN e.topic IN ('fermentation.started','fermentation.ready') THEN e.entity_id ELSE o.fermentation_id END
-    LEFT JOIN products p ON p.id=coalesce(o.target_product_id,f.target_product_id)
-    LEFT JOIN receipts r ON r.id=e.entity_id
-    WHERE e.topic=ANY($1::text[]) AND NOT EXISTS(SELECT FROM notifications n WHERE n.id='event:'||e.id::text)
-    ORDER BY e.created_at DESC,e.id DESC LIMIT 200`,
-      [Object.keys(topics)],
+    await client.query(
+      `INSERT INTO notifications(id,title,body,href,severity,occurred_at)
+       SELECT
+         'event:' || e.id::text,
+         t.title,
+         CASE
+           WHEN p.name IS NOT NULL AND (o.code IS NOT NULL OR f.code IS NOT NULL) THEN
+             p.name || ' · ' ||
+             (CASE WHEN o.code IS NOT NULL THEN 'PRD-' || lpad(o.code::text, 6, '0') ELSE 'B-' || lpad(f.code::text, 6, '0') END) ||
+             coalesce(' · ' || nullif(e.payload->>'quantity_g', '') || ' جم', '')
+           ELSE 'سند الاستلام ' || coalesce(r.code::text, '')
+         END,
+         CASE
+           WHEN o.id IS NOT NULL THEN '/production/' || o.id::text
+           WHEN f.id IS NOT NULL THEN '/production/' || f.id::text
+           ELSE '/purchases/' || e.entity_id::text
+         END,
+         'info',
+         e.created_at
+       FROM outbox_events e
+       JOIN unnest($1::text[], $2::text[]) AS t(topic, title) ON t.topic = e.topic
+       LEFT JOIN production_orders o ON o.id=coalesce((e.payload->>'order_id')::uuid,e.entity_id)
+       LEFT JOIN fermentations f ON f.id=CASE WHEN e.topic IN ('fermentation.started','fermentation.ready') THEN e.entity_id ELSE o.fermentation_id END
+       LEFT JOIN products p ON p.id=coalesce(o.target_product_id,f.target_product_id)
+       LEFT JOIN receipts r ON r.id=e.entity_id
+       WHERE NOT EXISTS(SELECT FROM notifications n WHERE n.id='event:'||e.id::text)
+       ORDER BY e.created_at DESC,e.id DESC LIMIT 200
+       ON CONFLICT DO NOTHING`,
+      [topicEntries.map(([k]) => k), topicEntries.map(([, v]) => v)],
     );
-    for (const e of events.rows) {
-      const code = e.order_code
-        ? `PRD-${String(e.order_code).padStart(6, '0')}`
-        : e.batch_code
-          ? `B-${String(e.batch_code).padStart(6, '0')}`
-          : '';
-      const body =
-        e.product_name && code
-          ? `${e.product_name} · ${code}${e.payload.quantity_g ? ' · ' + e.payload.quantity_g + ' جم' : ''}`
-          : `سند الاستلام ${e.receipt_code ?? ''}`;
-      const href = e.order_id
-        ? '/production/' + e.order_id
-        : e.batch_id
-          ? '/production/' + e.batch_id
-          : '/purchases/' + e.entity_id;
-      await client.query(
-        `INSERT INTO notifications VALUES($1,$2,$3,$4,'info',$5) ON CONFLICT DO NOTHING`,
-        ['event:' + e.id, topics[e.topic], body, href, e.created_at],
-      );
-    }
     await client.query(`INSERT INTO notifications(id,title,body,href,severity,occurred_at)
    SELECT 'stage:'||s.id::text||':'||v.kind||':'||floor(extract(epoch FROM s.due_at)*1000)::bigint::text,
     'الفرن: '||v.title,
@@ -78,23 +78,44 @@ export async function listNotifications(member: Member, before?: { at: string; i
     values.push(before.at, before.id);
     filter = 'WHERE (n.occurred_at,n.id)<($2::timestamptz,$3::text)';
   }
-  const result = await getPool().query(
-    `SELECT n.*,r.read_at IS NOT NULL AS is_read FROM notifications n
- LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=$1 ${filter}
- ORDER BY n.occurred_at DESC,n.id DESC LIMIT 31`,
-    values,
-  );
-  const count = await getPool().query(
-    `SELECT count(*)::int AS count FROM notifications n WHERE NOT EXISTS(SELECT FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=$1)`,
-    [member.id],
-  );
-  const items = result.rows.slice(0, 30),
+  const row = (
+    await getPool().query<{
+      unread_count: number;
+      items: Array<{
+        id: string;
+        title: string;
+        body: string;
+        href: string;
+        severity: string;
+        occurred_at: string;
+        is_read: boolean;
+      }>;
+    }>(
+      `WITH unread AS (
+        SELECT count(*)::int AS count FROM notifications n
+        WHERE NOT EXISTS(SELECT FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=$1)
+      )
+      SELECT
+        (SELECT count FROM unread) AS unread_count,
+        coalesce((
+          SELECT jsonb_agg(row_to_json(x)) FROM (
+            SELECT n.id,n.title,n.body,n.href,n.severity,
+              to_char(n.occurred_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS occurred_at,
+              r.read_at IS NOT NULL AS is_read
+            FROM notifications n
+            LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=$1 ${filter}
+            ORDER BY n.occurred_at DESC,n.id DESC LIMIT 31
+          ) x
+        ), '[]'::jsonb) AS items`,
+      values,
+    )
+  ).rows[0];
+  const items = row.items.slice(0, 30),
     last = items.at(-1);
   return {
     items,
-    unread_count: count.rows[0].count,
-    next_cursor:
-      result.rows.length > 30 && last ? { at: last.occurred_at.toISOString(), id: last.id } : null,
+    unread_count: row.unread_count,
+    next_cursor: row.items.length > 30 && last ? { at: last.occurred_at, id: last.id } : null,
   };
 }
 export async function readNotifications(member: Member, ids?: string[]) {

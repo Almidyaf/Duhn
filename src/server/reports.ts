@@ -22,10 +22,28 @@ export async function reportContext(member: Member) {
     name: settings.name || factoryProfile.name,
   };
 }
-export async function getFactoryReport(member: Member, input: ReportRange): Promise<FactoryReport> {
+function formatReportStamp(timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const p = (type: string) => parts.find((x) => x.type === type)!.value;
+  return `${p('year')}-${p('month')}-${p('day')} ${p('hour')}:${p('minute')}`;
+}
+
+export async function getFactoryReport(
+  member: Member,
+  input: ReportRange,
+  resolvedTimezone?: string,
+): Promise<FactoryReport> {
   requireAssetAccess(member);
   const range = reportRangeSchema.parse(input);
-  const { timezone } = await reportContext(member);
+  const timezone = resolvedTimezone ?? (await reportContext(member)).timezone;
   const client = await getPool().connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -94,12 +112,7 @@ export async function getFactoryReport(member: Member, input: ReportRange): Prom
         [timezone],
       )
     ).rows;
-    const generatedAt = (
-      await client.query<{ stamp: string }>(
-        `SELECT to_char(now() AT TIME ZONE $1,'YYYY-MM-DD HH24:MI') AS stamp`,
-        [timezone],
-      )
-    ).rows[0].stamp;
+    const generatedAt = formatReportStamp(timezone);
     const production = (
       await client.query(
         `SELECT

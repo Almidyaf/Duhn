@@ -28,7 +28,12 @@ export function Notifications({ userId }: { userId: string }) {
   const { data: count, mutate: refreshCount } = useSWR<Feed>(
     ['/api/v1/notifications', userId],
     ([url]) => fetchJson(url),
-    { refreshInterval: 15000, revalidateOnFocus: true },
+    {
+      refreshInterval: 60000,
+      revalidateOnFocus: false,
+      revalidateIfStale: false,
+      dedupingInterval: 30000,
+    },
   );
   const params = before
     ? '?' + new URLSearchParams({ before_at: before.at, before_id: before.id })
@@ -40,7 +45,7 @@ export function Notifications({ userId }: { userId: string }) {
   } = useSWR<Feed>(
     open ? ['/api/v1/notifications' + params, userId] : null,
     ([url]) => fetchJson(url),
-    { refreshInterval: 15000 },
+    { refreshInterval: 60000, revalidateOnFocus: false, dedupingInterval: 15000 },
   );
   useEffect(() => {
     if (open) ref.current?.showModal();

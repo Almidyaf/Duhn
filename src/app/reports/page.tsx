@@ -47,7 +47,7 @@ export default async function ReportsPage({
   } catch {
     invalid = true;
   }
-  const data = invalid ? null : await getFactoryReport(member, range);
+  const data = invalid ? null : await getFactoryReport(member, range, context.timezone);
   return (
     <Shell member={member} section="reports">
       <div className="page-heading">

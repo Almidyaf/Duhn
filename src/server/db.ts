@@ -47,6 +47,7 @@ function getCfContext(): CfContext | undefined {
 
 function scopePoolSchema(pool: Pool, schema: string): Pool {
   const wrapped = new WeakSet<PoolClient>();
+  const beginScopedSql = `BEGIN; SET LOCAL search_path TO "${schema}", public;`;
   const setLocalSql = `SET LOCAL search_path TO "${schema}", public`;
 
   const wrapClient = (client: PoolClient): PoolClient => {
@@ -65,6 +66,11 @@ function scopePoolSchema(pool: Pool, schema: string): Pool {
 
       return (async () => {
         if (/^BEGIN\b/i.test(sql)) {
+          if (args.length === 1 && typeof first === 'string') {
+            const res = await origQuery(`${sql.replace(/;+$/, '')}; ${setLocalSql};`);
+            inTx = true;
+            return res;
+          }
           const res = await origQuery(...args);
           inTx = true;
           await origQuery(setLocalSql);
@@ -80,9 +86,8 @@ function scopePoolSchema(pool: Pool, schema: string): Pool {
         if (inTx) {
           return origQuery(...args);
         }
-        await origQuery('BEGIN');
+        await origQuery(beginScopedSql);
         try {
-          await origQuery(setLocalSql);
           const res = await origQuery(...args);
           await origQuery('COMMIT');
           return res;
@@ -162,6 +167,16 @@ export function getPool() {
     shared.duhnPool = createPool();
   }
   return shared.duhnPool;
+}
+
+export function getDynamicPool(): Pool {
+  return new Proxy({} as Pool, {
+    get(_target, prop) {
+      const pool = getPool();
+      const value = Reflect.get(pool, prop, pool);
+      return typeof value === 'function' ? value.bind(pool) : value;
+    },
+  });
 }
 
 export async function transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
