@@ -21,7 +21,20 @@ export function createAuth(allowBootstrapSignup = false) {
       updateAge: 60 * 60,
       cookieCache: { enabled: true, maxAge: 60 },
     },
-    rateLimit: { enabled: true, storage: 'database', window: 60, max: 60 },
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'],
+      },
+    },
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+      window: 60,
+      max: 60,
+      customRules: {
+        '/get-session': false,
+      },
+    },
   });
 }
 
