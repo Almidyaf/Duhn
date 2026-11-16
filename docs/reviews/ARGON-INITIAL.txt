@@ -1,0 +1,370 @@
+مسودة Argon الأولى — توجد تصحيحات وتخفيضات للأولوية في التقرير النهائي ARGON-REVIEW.md. لا تعتمد هذه المسودة وحدها.
+
+# تقرير المراجعة المستقلة لحزمة تخطيط وتنفيذ «نظام مصنع دهن العود»
+
+## 1. الحكم الموجز
+
+حزمة التخطيط في مجملها متماسكة هندسيًا ومضبوطة النطاق ضمن الأقسام الأربعة المعتمدة (`الأصول`، `المشتريات`، `خط الإنتاج`، `التقارير ولوحة الإدارة`)، وتفصل بوضوح بين القرارات المؤكدة والقرارات الصناعية المفتوحة (`D01–D12` في [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L19-L33))، كما تضع ضوابط سليمة لمنع الفاصلة العائمة والإكمال التلقائي للمراحل والكتابة غير الذرية.
+
+غير أن المراجعة الدقيقة لنصوص المواصفات كشفت عن **5 ملاحظات عالية الأولوية (P1)** و**5 ملاحظات متوسطة (P2)** و**ملاحظة تنظيمية واحدة (P3)**، تشمل **تناقضات نصية مباشرة** بين ملفات المواصفات، و**ثغرات في نموذج البيانات وحدود معاملات PostgreSQL وآلة الحالات** ستؤدي — إذا نُفذت حرفيًا بواسطة Gemini Flash عبر مهام منفصلة — إلى اختلاط أرصدة أوامر الإنتاج المتوازية، أو بقاء توقفات مفتوحة إلى ما لا نهاية في التقارير، أو ضياع أثر طلبات `idempotency` عند التراجع (`ROLLBACK`)، أو كسر قيود التفرّد عند إعادة المعالجة (`rework`).
+
+> **ملاحظة منهجية:** لم تُعدّ القرارات التشغيلية المعلنة مفتوحة أصلًا في [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L19-L33) (`D01–D12`) عيوبًا في الخطة؛ وإنما اقتصرت الملاحظات أدناه على التناقضات المثبتة في النصوص أو الفجوات التقنية التي تمنع تنفيذ «المقترح للتطوير» نفسه بصورة صحيحة داخل الأقسام الأربعة الحالية.
+
+---
+
+## 2. الملاحظات التفصيلية حسب الأولوية
+
+### أولًا: ملاحظات عالية الأولوية (P1)
+
+---
+
+#### [P1-1] غياب معرّف المالك التشغيلي (`production_order_id` / `fermentation_id`) من مفتاح حساب المادة (`material_accounts`) وتعارض ترتيب ترحيل `T07`
+
+- **التصنيف:** ثغرة في نموذج البيانات وتناقض مع تبعيات المهام يؤديان إلى تصميم خاطئ عند التنفيذ بواسطة Gemini Flash.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L62-L64)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L78-L84)
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L29)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L63-L90)
+- **النص أو القاعدة محل الإشكال:**
+  - ينص [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L62) على أن `material_accounts / balance_projections` هو: «حساب كمية حسب المادة والدفعة والمرحلة والموقع والحالة والوحدة»، ويؤكد [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L78): «حساب المادة يحدد الصنف والدفعة والمرحلة والموقع والحالة؛ له رصيد لا يصبح سالبًا».
+  - في المقابل ينص [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L29) على أن «لكل سحب رقم أمر إنتاج مستقل، وكمية وتاريخ ومراحل وتوقفات مستقلة»، وينص [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L83) على أن «الإصدار الأول يعالج كامل رصيد أمر الإنتاج في المرحلة».
+  - كما أن المهمة `T07` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L63-L67)) تُنشئ جداول `material_accounts` و`balance_projections` و`material_movements` في المرحلة 04 **قبل** إنشاء جداول `material_lots` (`T08`) و`fermentations` (`T09`) و`production_orders` (`T10`) و`finished_lots` (`T17`).
+- **سيناريو عملي يوضح الأثر:**
+  - دفعة تخمير `B-2026-0058` رصيدها `25,000 جم` (مرتبطة بدفعة المادة `L-01`). يُجري العامل سحبين مستقلين كما في معيار قبول `T10` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L89)): الأمر `P01` بكمية `5,000 جم` والأمر `P02` بكمية `4,000 جم`.
+  - كلا الأمرين يشتركان في نفس الصنف ونفس دفعة المادة (`L-01`) ونفس دفعة التخمير (`B-2026-0058`). عندما يكون الأمران معًا في حالة «انتظار الفرن» أو «الفرن»، فإن مفتاح الحساب المعرّف بـ `(product_id, lot_id, stage, location, status)` لا يتضمن `production_order_id`، فيندمج رصيد الأمرين في حساب واحد قيمته `9,000 جم`!
+  - عند إكمال الفرن للأمر `P01`، إما أن يستهلك النظام كامل رصيد الحساب (`9,000 جم`) عملًا بقاعدة «يعالج كامل رصيد أمر الإنتاج في المرحلة»، أو يفشل العزل والقفل المستقل لكل أمر إنتاج.
+- **التعديل المحدد المقترح:**
+  1. تعديل تعريف `material_accounts` في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L62) و[02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L78) ليشمل صراحةً نطاق المالك التشغيلي للحساب: `(product_id, unit, owner_type, owner_id, stage, location_id, status)` حيث `owner_type ∈ ('material_lot', 'fermentation', 'production_order', 'finished_lot', 'system_external')` (أو أعمدة مرجعية اختيارية مضبوطة بقيد `CHECK` يضمن مالكًا واحدًا لكل حساب).
+  2. توضيح ذلك في توصيف `T07` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L65)) حتى لا يربط Gemini Flash جدول `material_accounts` بعمود `lot_id` وحده في المرحلة 04.
+- **اختبار قبول:**
+  - إنشاء سحبين `P01` (`5,000 جم`) و`P02` (`4,000 جم`) من نفس دفعة التخمير `B-2026-0058` ونقلهما إلى نفس المرحلة (`oven`)؛ التحقق من وجود حسابي رصيد مستقلين في `balance_projections` لكل أمر إنتاج، وأن إكمال أو قفل `P01` لا يقرأ ولا يخصم ولا يقفل رصيد `P02`.
+
+---
+
+#### [P1-2] تناقض مصير التوقف المفتوح عند بلوغ المؤقت في سياسة `elapsed_time` مع قاعدة تقارير التوقف وقيد الفهرس الجزئي
+
+- **التصنيف:** تناقض مثبت في نص الخطة.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L33-L34)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L75)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L60)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L113)
+  - [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L68)
+  - [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L78)
+- **النص أو القاعدة محل الإشكال:**
+  - ينص [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L33) على أن الحالة `paused` تنتقل إلى `awaiting_inspection إذا تحقق الزمن المتواصل`، وينص [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L75) على: «لو بلغ المؤقت مدته أثناء توقف `elapsed_time`، تظهر «بانتظار الفحص» مع استمرار سجل التوقف المفتوح كواقعة. يغلق التوقف بالاستئناف أو قرار إنهاء موثق؛ لا يُفترض استئناف وهمي عند الإكمال».
+  - بينما يعرّف [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L60) جدول `stoppages` بالحقول: `(stage_run، السبب، occurred_at، resumed_at، actors، أثره على المؤقت)` فقط دون حقل إغلاق بديل عن الاستئناف، وينص [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L78) على: «التوقف المفتوح يحسب حتى نهاية الفترة أو وقت التقرير، أيهما أسبق».
+- **سيناريو عملي يوضح الأثر:**
+  - مرحلة تعمل بسياسة `elapsed_time` تتوقف الساعة `11:00` (`resumed_at = NULL`). يبلغ المؤقت مدته الساعة `12:00` أثناء التوقف، فتنتقل المرحلة إلى `awaiting_inspection` مع بقاء التوقف مفتوحًا.
+  - الساعة `12:15`:
+    1. إذا حاول العامل ضغط «استئناف» (`POST /stages/:id/resume`)، سترفض آلة الحالات الطلب لأن حالة المرحلة لم تعد `paused` بل صارت `awaiting_inspection`.
+    2. وإذا أكمل العامل المرحلة مباشرة (`POST /stages/:id/complete` من `awaiting_inspection` إلى `completed`) مع تطبيق قاعدة «لا يُفترض استئناف وهمي عند الإكمال»، يبقى `resumed_at = NULL` إلى الأبد، فتستمر تقارير التوقف ([04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L78)) في احتساب هذه المرحلة متوقفةً 24 ساعة يوميًا في كل التقارير المستقبلية!
+- **التعديل المحدد المقترح:**
+  1. في جدول `stoppages` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L60)): استبدال/إقران `resumed_at` بحقل `ended_at` مع حقل `closing_type ∈ ('resumed', 'completed_after_due', 'terminated_by_decision', 'cancelled')`.
+  2. في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L75): النص صراحةً على أنه عند إكمال المرحلة (أو إلغائها/إعادة معالجتها) وهناك سجل توقف مفتوح، تُغلق واقعة التوقف ذريًا داخل معاملة الإكمال بتثبيت `ended_at = occurred_at_of_completion` و`closing_type = 'completed_after_due'` (مع بقاء `resumed_at = NULL` لعدم ادعاء استئناف وهمي)، أو السماح بإغلاق التوقف في حالة `awaiting_inspection`.
+- **اختبار قبول:**
+  - بدء مرحلة `elapsed_time` مدتها ساعة عند `10:00`، إيقافها عند `10:30`، حلول الموعد عند `11:00`، ثم إكمال المرحلة عند `11:20`؛ يجب أن يُغلق سجل التوقف عند `11:20` بنوع إغلاق `completed_after_due`، وأن يظهر زمن التوقف في تقرير اليوم `50 دقيقة` فقط ولا يستمر في التراكم بعد `11:20`.
+
+---
+
+#### [P1-3] ثغرة حجز `idempotency_requests` داخل المعاملة التي تتراجع (`ROLLBACK`) وتعارضها مع `GET /requests/:key`
+
+- **التصنيف:** ثغرة في حدود معاملات PostgreSQL وidempotency تؤدي إلى سلوك خاطئ عند انقطاع الاتصال أو التزامن.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L90-L99)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L143)
+  - [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L105-L108)
+  - [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L19-L22)
+- **النص أو القاعدة محل الإشكال:**
+  - ينص تسلسل الكتابة في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L92-L98) على فتح معاملة واحدة في الخطوة 2، ثم حجز سجل `idempotency` في الخطوة 3، ثم التحقق من الرصيد والنسخة في الخطوة 5، ثم في الخطوة 7: «`COMMIT` ثم أعد النتيجة المعتمدة. أي خطأ قبل ذلك يؤدي إلى `ROLLBACK`».
+  - وفي الوقت نفسه يعتمد [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L105-L107) و[02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L143) على المسار `GET /requests/:key` للتحقق من مصير الطلب عند انقطاع الاتصال قبل معرفة النتيجة.
+- **سيناريو عملي يوضح الأثر:**
+  1. **انقطاع اتصال أثناء تنفيذ المعاملة:** يرسل هاتف العامل طلب سحب بمفتاح `K1`، وينقطع الاتصال خلال 500ms بينما المعاملة لا تزال قيد التنفيذ (لم تعمل `COMMIT` بعد). يعود الاتصال سريعًا فيستدعي العميل `GET /requests/K1` ([01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L107)). تحت مستوى العزل الافتراضي في PostgreSQL (`READ COMMITTED`)، لا يرى `GET /requests/K1` السجل غير الملتزم به، فيعيد `404`، فتظن الواجهة أن الطلب لم يصل أصلًا وتسمح للعامل بإجراء جديد بينما الطلب الأول يُتمّ `COMMIT` في الخلفية!
+  2. **فشل تحقق تجاري مع انقطاع الشبكة:** إذا رُفض الطلب في الخطوة 5 بسبب `INSUFFICIENT_BALANCE` ونفذ الخادم `ROLLBACK` (الخطوة 7)، يُمحى سجل `idempotency_requests` معه؛ فعند استدعاء `GET /requests/K1` لن يجد العميل نتيجة الرفض المحفوظة.
+  3. **تزامن طلبين بنفس المفتاح في `READ COMMITTED`:** إذا نفذ Gemini Flash الخطوة 3 بعبارة `INSERT INTO idempotency_requests ... ON CONFLICT DO NOTHING RETURNING *` في جملة واحدة، فإن الطلب الثاني ينتظر التزام الأول ثم يعيد `0 صفوف` ولن يرى الصف الجديد داخل نفس لقطة الجملة ما لم يُنفذ `SELECT` لاحق منفصل.
+- **التعديل المحدد المقترح:**
+  1. تعديل [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L92-L98) بحيث يُسجل مفتاح `idempotency_requests` أولًا بحالة `in_progress` (مع `locked_until` قصير وبصمة المدخلات `payload_hash`) في معاملة مستقلة سريعة تُلتزم فورًا قبل فتح معاملة العمل، أو تُحفظ نتيجة الرفض التجاري الحتمي (`409` / `422` مثل نقص الرصيد أو تعارض النسخة) في `idempotency_requests` بدل محوها بـ `ROLLBACK`؛ بينما يقتصر حذف/تحرير المفتاح للإعادة على الأخطاء العابرة (`deadlock` / `serialization` / عطل اتصال DB).
+  2. تحديد حالات `GET /requests/:key` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L143)) صراحةً بـ: `in_progress` (ينتظر العميل ولا ينشئ طلبًا جديدًا)، `completed` (يعيد النتيجة)، `failed_deterministic` (يعيد خطأ التحقق التجاري)، `not_found`.
+- **اختبار قبول:**
+  - إرسال طلبين متزامنين بنفس `Idempotency-Key` ونفس المدخلات: ينفذ أحدهما فقط وينتظر الآخر أو يتلقى `in_progress`/`completed` بنفس النتيجة؛ واستدعاء `GET /requests/:key` أثناء تنفيذ المعاملة يعيد `status: "in_progress"` لا `404`؛ وعند فشل الطلب بسبب `INSUFFICIENT_BALANCE` وفقدان الرد، يعيد `GET /requests/:key` خطأ `INSUFFICIENT_BALANCE` المحفوظ.
+
+---
+
+#### [P1-4] نقص حالة المحاولة المستبدلة في آلة حالات `stage_runs` وتعارض قيد التفرّد `(parent_id, sequence_no)` ومسار الفحص مع إعادة المعالجة (`rework`)
+
+- **التصنيف:** تناقض مثبت في آلة الحالات وقيد الفهرس الفريد يؤدي إلى كسر ميزة إعادة المعالجة.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L29-L43)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L83)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L109-L113)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L58-L61)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L111-L113)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L133-L134)
+- **النص أو القاعدة محل الإشكال:**
+  1. في جدول حالات المرحلة ([03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L29-L37))، يذكر الصف `on_hold` (السطر 35) في عمود الانتقالات: `عودة للحالة المناسبة بقرار مسؤول، أو rework، أو cancelled`، لكن عمود `الحالة الداخلية` لا يحتوي حالة اسمها `rework` أو `superseded`! وفي السطر 43 ينص على أن «إعادة المعالجة تنشئ `stage_run` جديدًا برقم محاولة، مربوطًا بالمحاولة السابقة».
+  2. في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L111) يُفرض قيد `UNIQUE` على `(parent_id, sequence_no)`.
+  3. في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L31)، المرحلة غير الزمنية (التصفية/التعبئة) تنتقل من `running` إلى `paused / awaiting_inspection / completed` ولا تذكر الانتقال إلى `on_hold` عند إدخال وزن ناتج خارج الحدود ([03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L109)).
+- **سيناريو عملي يوضح الأثر:**
+  - مرحلة فرن (`sequence_no = 1`, `attempt_no = 1`) تدخل `on_hold` للمراجعة، ويقرر المدير `إعادة معالجة` عبر `POST /reviews/:id/decision`.
+  - يحاول النظام إنشاء `stage_run` جديد (`sequence_no = 1`, `attempt_no = 2`) لنفس `production_order`:
+    1. يفشل الإدراج في PostgreSQL بسبب قيد `UNIQUE (parent_id, sequence_no)` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L111)) لعدم وجود `attempt_no` في القيد!
+    2. لا توجد حالة نهائية صالحة للمحاولة القديمة (`attempt_no = 1`): فلو بقيت `on_hold` ستظل ظاهرة كعملية معلقة تنتظر قرارًا، ولو حُولت إلى `completed` ستُحتسب مخرجاتها وأوقاتها مرتين في التقارير ([04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L24-L26) و[04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L76))، ولو حُولت إلى `cancelled` ستُعامل كإلغاء أمر؛ كما أن حجز المعدة النشط للمحاولة الأولى (`equipment_allocations`) سيمنع المحاولة الثانية من حجز نفس المعدة بسبب الفهرس الفريد الجزئي ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L113)) ما لم يُخلَ أو يُنقل ذريًا.
+- **التعديل المحدد المقترح:**
+  1. إضافة الحالة النهائية `reworked` (أو `superseded`) إلى جدول حالات `stage_runs` في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L29-L37) لتنتقل إليها المحاولة السابقة عند إنشاء محاولة إعادة المعالجة، مع إخلاء أو نقل `equipment_allocations` ذريًا داخل نفس المعاملة.
+  2. تعديل قيد التفرّد في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L111) ليكون: لـ `production_orders` على `(fermentation_id, sequence_no)`، ولـ `stage_runs` على `(owner_type, owner_id, sequence_no, attempt_no)` مع فهرس فريد جزئي يضمن وجود محاولة نشطة واحدة غير نهائية لكل `(owner_type, owner_id, sequence_no)`.
+  3. السماح بانتقال `running -> on_hold` (أو `running -> awaiting_inspection -> on_hold`) للمراحل غير الزمنية عند تجاوز حدود الوزن في `POST /stages/:id/complete`.
+- **اختبار قبول:**
+  - وضع مرحلة فرن (`attempt_no = 1`) في حالة `on_hold` وإصدار قرار `rework`: تنتقل المحاولة الأولى إلى `reworked` ويُخلى حجز معدتها، وتُنشأ المحاولة الثانية (`attempt_no = 2`) بحالة `queued` لنفس `sequence_no` دون خطأ قيد فريد، ويمكنها حجز نفس المعدة، ولا تدخل المحاولة الأولى في إجمالي «ناتج الفرن» المعتمد.
+
+---
+
+#### [P1-5] فجوة ربط صنف الاستلام (`receipts`) بصنف التخمير (`fermentations`) في نموذج الأصناف والمنتجات عند تنفيذ المقترح التطويري لـ `D01`
+
+- **التصنيف:** تفصيل تنفيذ مطلوب في نموذج البيانات وعقود API لمنع تعارض `T08` مع `T09`.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L47)
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L54-L55)
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L84)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L51-L56)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L125-L127)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L15-L16)
+  - [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L21)
+- **النص أو القاعدة محل الإشكال:**
+  - القرار `D01` مفتوح صناعيًا (وهذا مقبول)، لكن «المقترح للتطوير» المعتمد للبناء في [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L21) و[PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L47) ينص على: «مادة خام منفصلة عن المنتج النهائي، مراحل قابلة للتهيئة».
+  - في المقابل، يعرّف [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L51) جدولًا واحدًا `products` («النوع، الكود، الاسم، نشط/معطل، فئة المادة ووحدتها») ومسارًا واحدًا `GET /products?type_id=...` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L125)) دون معامل تصفية حسب `فئة المادة` (`raw_material`، `finished_product`، `consumable`، `packaging`).
+  - وفي [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L54-L55) يختار المستخدم في المشتريات «النوع، المنتج، الكمية»، ويختار العامل في بدء التخمير «المنتج والكمية؛ مصدر المادة إذا تعددت المصادر» (`POST /fermentations` يأخذ `product_id, quantity_g, مصادر عند التعدد` في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L127)).
+- **سيناريو عملي يوضح الأثر:**
+  - ينفذ Gemini Flash المهمة `T08` (المشتريات) فيسجل استلام `25,000 جم` لصنف فئته `raw_material` (`product_id = P_RAW`) وينشئ له `material_lot`.
+  - ثم ينفذ `T09` (بدء التخمير) حيث يختار العامل المنتج النهائي المستهدف `دهن عود A1` (`product_id = P_OIL`)؛ فإن بحثت خدمة `POST /fermentations` عن أرصدة خام مطابقة لـ `product_id = P_OIL` مباشرةً ستجد الرصيد `0 جم` وتفشل الرحلة المرجعية! وإن لم يُصفَّ مسار `GET /products` بفئة الصنف، ستظهر أسطوانات الغاز والعبوات ضمن قائمة منتجات بدء التخمير.
+- **التعديل المحدد المقترح:**
+  1. إضافة معامل تصفية `category` (أو `usage=receipt|fermentation_target`) إلى `GET /products?type_id=...&category=...` في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L125) لعرض الأصناف القابلة للشراء في المشتريات، والمنتجات القابلة للتصنيع في بدء التخمير.
+  2. النص صراحةً في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L52-L56) و[03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L15) على أن `recipe_versions` تحدد قائمة `accepted_input_product_ids` للمنتج المستهدف (مع السماح في وضع التطوير البسيط بأن يقبل المنتج نفسه كمادة إدخال إذا رغبت سياسة المصنع بتوحيد الصنف في `D01`)، وأن `POST /fermentations` يتحقق من توفر `material_lots` التي ينتمي `product_id` الخاص بها إلى `accepted_input_product_ids` في الوصفة المعتمدة.
+- **اختبار قبول:**
+  - استلام `25,000 جم` من مادة خام `خشب عود هندي` مربوطة في وصفة المنتج المستهدف `دهن عود A1`؛ عند اختيار `دهن عود A1` في بدء التخمير، يقترح النظام دفعة المادة الخام المتاحة تلقائيًا (إذا كانت وحيدة) وينقل `25,000 جم` من حساب المادة الخام إلى حساب التخمير مع تثبيت المنتج المستهدف `دهن عود A1` على الدفعة، ولا تظهر المستهلكات (كالغاز) في قائمة اختيار منتج التخمير.
+
+---
+
+### ثانيًا: ملاحظات متوسطة الأولوية (P2)
+
+---
+
+#### [P2-1] تناقض ظهور زر `[ فحص وإكمال المرحلة ]` أثناء سريان مؤقت الفرن في التصميم مع قاعدة منع الإكمال المبكر، وغياب جدول حالات `fermentations` و`production_orders`
+
+- **التصنيف:** تناقض بين ملف التصميم وملف التشغيل، مع نقص في تعريف حالات كيان التخمير وأمر الإنتاج.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L68-L77)
+  - [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L85)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L71)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L115)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L128-L133)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L17-L23)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L29-L41)
+- **النص أو القاعدة محل الإشكال:**
+  1. يعرض المثال في [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L73-L77) بطاقة مرحلة `الفرن` والوقت `المتبقي: 02:30:00` مع زر إجراء أساسي فعّال `[ فحص وإكمال المرحلة ]`، بينما ينص [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L39) على أن «الإكمال المبكر لمرحلة زمنية ممنوع افتراضيًا، إلا إذا فُعل استثناء معتمد».
+  2. ينص [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L71) على أن «حالات دفعة التخمير منفصلة عن مرحلة معالجتها»، ويذكر [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L115) فهرس `production_orders(status, created_at, id)`، لكن [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L29-L37) يعرّف حالات `stage_runs` فقط دون جدول حالات `fermentations.status` و`production_orders.status`، ودون توضيح كيف يغلق المسار `POST /fermentations/:id/ready` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L128)) سجل `stage_run` الخاص بالتخمير دون طلب `output_quantity_g`.
+- **سيناريو عملي يوضح الأثر:**
+  - إذا بنى Gemini Flash بطاقة العامل في `T02`/`T11` وفق رسم [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L77)، سيظهر زر `[ فحص وإكمال المرحلة ]` كإجراء أساسي أثناء عمل المؤقت، فإذا ضغطه العامل رُفض الطلب من الخادم (`422 EARLY_COMPLETION_FORBIDDEN`).
+  - وفي `T09`/`T10`، سيخترع كل جزء أسماء حالات مختلفة لـ `fermentations.status` (`active` مقابل `ready` مقابل `ready_for_withdrawal` مقابل `depleted`).
+- **التعديل المحدد المقترح:**
+  1. تعديل مثال البطاقة في [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L73-L77) ليوضح أن زر `[ فحص وإكمال المرحلة ]` وحقل الوزن الناتج يظهران كإجراء أساسي بعد بلوغ المؤقت (`المتبقي: 00:00:00 — بانتظار الفحص`) أو في المراحل غير الزمنية، بينما أثناء سريان المؤقت في الوضع الافتراضي يكون الزر الأساسي معطلًا برسالة مفسرة («متاح بعد انتهاء المدة») مع بقاء `[ تسجيل توقف ]` متاحًا.
+  2. إضافة جدول قصير في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L20-L23) يثبت القيم القياسية لـ:
+     - `fermentations.status`: `in_fermentation` → `ready_for_withdrawal` → `depleted` (مع `on_hold` / `cancelled`).
+     - `production_orders.status`: `in_progress` → `completed` (مع `on_hold` / `cancelled`).
+     - وتوضيح أن `POST /fermentations/:id/ready` ينقل `stage_run` التخمير إلى `completed` وينقل `fermentations.status` إلى `ready_for_withdrawal`.
+- **اختبار قبول:**
+  - أثناء تشغيل الفرن قبل انتهاء المؤقت (مع منع الإكمال المبكر افتراضيًا)، لا يسمح زر الإكمال بالإرسال ويرفض الخادم `POST /stages/:id/complete`؛ وعند بلوغ `reached_due_at` يُتاح إدخال الوزن وتأكيد الفحص حتى لو تأخر العامل الخلفي في تحديث الحالة.
+
+---
+
+#### [P2-2] قصور مفتاح منع تكرار الإشعارات `(event, recipient, channel, schedule_version)` مع الأحداث المتكررة في نفس المرحلة
+
+- **التصنيف:** خطأ في قاعدة منع التكرار يؤدي إلى إسقاط إشعارات مشروعة عند تكرر التوقف أو الاستئناف أو المراجعة.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L49)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L67)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L141-L143)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L68-L69)
+- **النص أو القاعدة محل الإشكال:**
+  - ينص [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L143) على: «دلالة التسليم `at-least-once` مع منع تكرار داخلي بمفتاح `(event, recipient, channel, schedule_version)`».
+  - بينما يسمح [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L49) بـ «عدة توقفات متعاقبة» لنفس المرحلة، وينص السطر 67 على أن التوقف في `elapsed_time` لا يغير الموعد (وكذلك المراحل غير الزمنية كالتصفية والتعبئة لا تتغير فيها `schedule_version`).
+- **سيناريو عملي يوضح الأثر:**
+  - مرحلة تصفية (أو مرحلة فرن بسياسة `elapsed_time`) تتوقف للمرة الأولى (`schedule_version = 1`) فيُرسل إشعار للمدير بمفتاح `(stage_paused:run_1, manager_1, in_app, 1)`.
+  - تُستأنف المرحلة ثم تتوقف للمرة الثانية بسبب عطل جديد؛ لأن `schedule_version` لا يزال `1`، يصطدم الإشعار الثاني بنفس مفتاح منع التكرار ويُسقطه النظام صامتًا فلا يعلم المدير بالتوقف الثاني!
+- **التعديل المحدد المقترح:**
+  - تعديل [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L143) ليصبح مفتاح منع التكرار:
+    - لتنبيهات المؤقتات الزمنية: `(stage_run_id, timer_event_type, schedule_version, recipient_id, channel)`.
+    - لأحداث الوقائع التشغيلية (توقف، استئناف، طلب مراجعة، تصريف): `(source_event_id, event_type, recipient_id, channel)` حيث `source_event_id` هو معرّف واقعة `stoppage_id` أو `review_id` أو `outbox_event_id`.
+- **اختبار قبول:**
+  - إيقاف مرحلة `elapsed_time` ثم استئنافها ثم إيقافها مرة ثانية ضمن نفس `schedule_version`: يصل للمدير إشعاران مستقلان لكل واقعة توقف، بينما إعادة تشغيل `worker` أثناء إرسال الإشعار الثاني لا تكرر الإشعار الثاني نفسه.
+
+---
+
+#### [P2-3] ثغرات اتساق التقارير: القيم السالبة في `صافي البيع الكمي`، وتوقيت دخول المرتجع في `المخزون النهائي`، ومضاعفة `دخل الفرن` عند إعادة المعالجة، ولقطة القراءة
+
+- **التصنيف:** تناقضات وثغرات في تعريف مؤشرات التقارير وجلبها في `04-reports.md`.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L23-L33)
+  - [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L42-L47)
+  - [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L97)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L152)
+  - [01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L44)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L40-L41)
+  - [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L33)
+- **النص أو القاعدة محل الإشكال:**
+  1. **صافي البيع الكمي السالب:** يعرّف [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L31) `صافي البيع الكمي = البيع المباشر + بيع المخزون − مرتجعات الفترة`. بينما تطلب `T04` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L40-L41)) «قاعدة واحدة لتحويل الوزن» تمنع القيم السالبة ([01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L44)).
+  2. **بطاقة `في المخزون النهائي` والمرتجعات:** يعرّف [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L42) البطاقة بأنها «رصيد المخزون بعد المبيعات والمرتجعات والتسويات»، بينما ينص [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L119) و[06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L33) على أن المرتجع يدخل حساب `محجوز للفحص` أولًا ولا يزيد الرصيد المتاح للبيع إلا بعد قرار الإفراج.
+  3. **مؤشر `دخل الفرن` مع إعادة المعالجة:** يعرّف [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L23) `دخل الفرن` بأنه «مجموع الكمية التي بدأت مرحلة الفرن» دون استثناء محاولات إعادة المعالجة (`attempt_no > 1`)، بخلاف السطرين 24 و26 اللذين نصا على فصل إعادة المعالجة.
+  4. **لقطة القراءة المتسقة مقابل التوازي:** يوجب [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L97) حساب مؤشرات الصفحة من «لقطة قراءة متسقة»، بينما يوجه [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L152) إلى «جلب الاستعلامات المستقلة بالتوازي». في `node-postgres`، تشغيل `pool.query` بالتوازي يوزع الاستعلامات على اتصالات ومعاملات مستقلة بلا لقطة موحدة.
+- **سيناريو عملي يوضح الأثر:**
+  - بيع `1,000 جم` في 31 أكتوبر، واسترداد مرتجع `100 جم` في 1 نوفمبر دون مبيعات جديدة في ذلك اليوم: يصبح `صافي البيع الكمي` ليوم 1 نوفمبر `-100.000 جم`؛ فإذا استخدم عقد استجابة التقرير نفس نوع الوزن غير السالب (`NonNegativeWeight`) تعطل التقرير بخطأ `500`! كما أن إضافة المرتجع مباشرة لبطاقة `في المخزون النهائي` قبل قرار الفحص سيجعل اختبار القبول في [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L33) (`المتاح 2,000 والمحجوز 100`) يفشل.
+- **التعديل المحدد المقترح:**
+  1. في `T04` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L40)): التمييز في `src/contracts` بين `PositiveWeightGrams` (لإدخالات السحب والاستلام)، و`NonNegativeWeightGrams` (لأرصدة الحسابات والناتج التي تقبل `0.000`)، و`SignedWeightGrams` (لصافي البيع الكمي، وصافي التسويات، وفروق الأوزان في التقارير).
+  2. في [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L42): تعديل وصف `في المخزون النهائي` إلى: «رصيد المخزون القابل للبيع بعد المبيعات والمرتجعات المفرج عنها بعد الفحص والتسويات».
+  3. في [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L23): تقييد `دخل الفرن` بالمحاولة الأولى (`attempt_no = 1`) مع عرض كميات إعادة المعالجة منفصلة أسوةً بـ `ناتج الفرن`.
+  4. في [04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L97): النص على تنفيذ استعلامات التقرير المترابطة داخل معاملة قراءة واحدة `BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY` على `client` واحد (أو استعلام SQL موحد بـ `CTE`).
+- **اختبار قبول:**
+  - بيع `400 جم` في الشهر الأول ثم إرجاع `100 جم` في الشهر الثاني دون مبيعات جديدة: يعيد تقرير الشهر الثاني `صافي البيع الكمي = "-100.000"` دون خطأ تحقق، وتبقى الـ `100 جم` في بطاقة `محجوز للفحص` فقط حتى يصدر قرار الإفراج عنها.
+
+---
+
+#### [P2-4] نقص عقود API والكيانات لعمليات أساسية مطلوبة في المهام (طلب تصحيح العامل، التوقف/الاستئناف الجماعي، نقل/إخلاء المعدة، تسليم الوردية، والتسجيل الرجعي بعد الانقطاع)
+
+- **التصنيف:** نقص في عقود API ونموذج البيانات في `02-architecture-data.md` مقارنة بمتطلبات `PLAN.md` و`03-production-automation.md` و`06-quality-operations.md`.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L74)
+  - [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L78)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L46-L70)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L88)
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L123-L145)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L51)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L89-L93)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L101-L103)
+  - [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L123)
+  - [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L123)
+- **النص أو القاعدة محل الإشكال:**
+  - القائمة في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L123-L145) تغفل مسارات وحقولًا مطلوبة صراحةً في المهام `T14` و`T18` و`T24`:
+    1. **طلب التصحيح من العامل (`طلب تصحيح`):** في [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L74) و[03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L123) يطلب العامل التصحيح ويعتمد المدير، لكن [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L138) يذكر `POST /corrections` فقط دون كيان `correction_requests` أو مسار اعتماد.
+    2. **التوقف والاستئناف الجماعي (`T14`):** مطلوب في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L89-L93) مع «رابط إلى الحدث الجماعي»، لكن لا يوجد مسار `POST /stages/bulk-pause` و`POST /stages/bulk-resume` ولا حقل `group_event_id` في `stoppages`.
+    3. **نقل المعدة وإخلاؤها وتسليم الوردية (`T14`):** مطلوبة في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L51) و[03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L101-L103) بلا مسارات API مقابلة.
+    4. **التسجيل الرجعي بعد انقطاع الشبكة:** مطلوب في [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L123) و[04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L80) عبر إدخال `occurred_at` وسبب التأخر، لكن مدخلات مسارات التشغيل في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L126-L138) لا تتضمن `(occurred_at?, late_recording_reason?)`.
+    5. **حقل `expected_version`:** يفرضه [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L88) على «كل أمر يغير رصيدًا أو حالة»، لكنه مذكور في جدول المسارات (الأسطر 123–138) لمسارين فقط، وغير موضح في جدول الكيانات (الأسطر 46–70) أي الجداول تحمل عمود `version`.
+- **سيناريو عملي يوضح الأثر:**
+  - عند تنفيذ `T04` (بناء العقود وOpenAPI)، سيكتفي Gemini Flash بالمسارات الـ 19 المكتوبة في الجدول؛ وعند الوصول إلى `T14` و`T18` إما أن يضيف مسارات غير موثقة خارج العقد أو يغفل تنفيذ طلب تصحيح العامل وتسليم الوردية والتسجيل الرجعي.
+- **التعديل المحدد المقترح:**
+  - استكمال [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L123-L145) بإضافة:
+    - `POST /correction-requests` (للطلَب من العامل) و`POST /correction-requests/:id/decision` (لاعتماد/رفض المدير) بالإضافة إلى التصحيح المباشر للمدير.
+    - `POST /stages/bulk-pause` و`POST /stages/bulk-resume` مع `group_stoppage_id` في `stoppages`.
+    - `POST /stages/:id/transfer-equipment` و`POST /operations/:id/handover` (تسليم الوردية).
+    - السماح الاختياري بـ `occurred_at` و`late_reason` للمسؤول المفوض في أوامر الحركات التشغيلية.
+    - تثبيت وجود عمود `version INTEGER NOT NULL DEFAULT 1` على `fermentations` و`production_orders` و`stage_runs` و`finished_lots` و`equipment`.
+- **اختبار قبول:**
+  - يرسل عامل `POST /correction-requests` لتصحيح وزن مرحلة مكتملة فلا يتغير الرصيد قبل اعتماد المدير؛ وعند اعتماد المدير عبر `POST /correction-requests/:id/decision` تُسجل الحركة العكسية والبديلة في معاملة واحدة مع ربطها بطلب العامل.
+
+---
+
+#### [P2-5] التباس قاعدة `403` مقابل `404` لمنع تسريب وجود الكيانات، وتحديد الجداول المحمية من `UPDATE/DELETE`، وبوابة أمان العامل الخلفي عند الاستعادة
+
+- **التصنيف:** تفاصيل تنفيذ أمنية وتشغيلية مطلوبة في `02-architecture-data.md` و`06-quality-operations.md`.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L143-L145)
+  - [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L50)
+  - [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L101)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L227)
+- **النص أو القاعدة محل الإشكال:**
+  1. ينص [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L145) على: «`404` لعدم وجود المورد، و`403` لعدم الإذن وفق سياسة منع تسريب وجود الكيانات». إرجاع `403` عند وجود معرّف كيان لا يخص المستخدم و`404` عند عدم وجوده يكشف وجود الكيان فعليًا!
+  2. ينص [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L50) على: «لا `permission UPDATE/DELETE` لسجل الحركات المعتمد عبر الدور الاعتيادي» دون تسمية الجداول المشمولة مقابل الجداول التي تتطلب `UPDATE` تشغيليًا.
+  3. ينص [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L101) و[05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L227) على منع إرسال تنبيهات متقادمة عند استعادة نسخة احتياطية قبل فحص الوظائف القديمة، دون تحديد آلية برمجية تمنع `worker` من سحبها فور تشغيله.
+- **سيناريو عملي يوضح الأثر:**
+  - في `T23`، إذا استدعى مستخدم `GET /requests/:key` بمفتاح يخص مستخدمًا آخر وحصل على `403`، فإنه يستنتج وجود المفتاح.
+  - وفي `T07`، إذا فهم Gemini Flash منع `UPDATE` حرفيًا على جداول `balance_projections` أو `idempotency_requests` أو `stoppages`، ستتعطل جميع حركات النظام؛ أو سيكتفي بمنع التحديث في الكود دون تطبيق `REVOKE UPDATE, DELETE` (أو `BEFORE UPDATE OR DELETE` trigger) على جداول الدفتر غير القابلة للتعديل.
+  - وفي `T27`، عند تشغيل بيئة الاستعادة إذا بدأ `worker` تلقائيًا، سيرسل دفعة تنبيهات لمواعيد مضت عليها أيام قبل أن يتمكن المشغل من تنفيذ الخطوة 6 من دليل الاستعادة.
+- **التعديل المحدد المقترح:**
+  1. في [02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L145): توضيح أن `403` يُعاد عند رفض الوصول لمسار/قدرة حسب الدور (مثل عامل يطلب `/api/v1/reports/...` أو `/api/v1/settings`)، أما البحث بمعرّف مورد (`:id` أو `:key`) خارج نطاق صلاحية المستخدم فيعيد `404` لمنع كشف وجود المعرّف.
+  2. في [06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L50): تحديد الجداول Append-Only نصًا: `material_movements`، `movement_lines`، `audit_events` (تُمنع عليها `UPDATE, DELETE, TRUNCATE` لدور التطبيق أو عبر Trigger قاعدة بيانات)، مقابل جداول الحالة والإسقاط التي تقبل `UPDATE` مشروطًا.
+  3. في [03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L145) و[06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L101): إضافة متغير بيئة/إعداد `WORKER_SAFE_RESTORE_MODE=true` (أو سقف عمر أقصى `max_staleness_seconds` للوظائف الزمنية غير المرسلة) يوقف إرسال التنبيهات المتقادمة تلقائيًا عند الاستعادة حتى مراجعتها.
+- **اختبار قبول:**
+  - تنفيذ `UPDATE material_movements SET ...` باتصال مستخدم التطبيق يفشل على مستوى PostgreSQL؛ واستدعاء `GET /api/v1/requests/:other_user_key` يعيد `404`؛ وتشغيل `worker` مع وجود وظيفة `approaching_due` قديمة من يوم سابق يسقط تنبيه الاقتراب المتقادم دون إرساله.
+
+---
+
+### ثالثًا: ملاحظات اختيارية وتحسينية (P3)
+
+---
+
+#### [P3-1] تضخم حجم المهام `T04` و`T06` و`T14` وتأخر إنشاء جدول `scheduled_jobs` إلى `T15`
+
+- **التصنيف:** ملاءمة حجم المهام للتنفيذ المتدرج بواسطة Gemini Flash واستهلاك السياق.
+- **مراجع الملفات وأرقام الأسطر:**
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L37-L42)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L53-L57)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L97)
+  - [05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L117-L132)
+  - [GEMINI.md](file:///home/omar/Desktop/Duhn/GEMINI.md#L38)
+  - [GEMINI.md](file:///home/omar/Desktop/Duhn/GEMINI.md#L46)
+- **النص أو القاعدة محل الإشكال:**
+  1. تطلب `T04` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L37-L42)) كتابة جميع عقود `src/contracts` ومخطط البيانات التنفيذي وملف OpenAPI لجميع مسارات التشغيل والإدارة دفعةً واحدة في المرحلة 02 قبل وجود أي جدول، مما يضطر Gemini Flash لقراءة وتعديل ملفات عقود ضخمة في كل مهمة لاحقة.
+  2. تجمع `T06` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L53-L57)) 6 كيانات (`النوع`، `المنتج`، `المورد`، `الأصل`، `المعدة`، `الإعدادات/الأسباب`، `الوصفات ونسخها`) مع شاشات الإدارة والأصول ومكون `ProductSelect` في دورة واحدة.
+  3. تجمع `T14` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L117-L121)) 8 مسارات استثنائية معقدة (شروط مراجعة الاستئناف، الحجز، التالف، الإلغاء، إعادة المعالجة، نقل المعدة، تسليم الوردية، والتوقف الجماعي) في مهمة واحدة.
+  4. تحتاج `T11` و`T13` إلى حفظ وتحديث `schedule_version` والوظائف المجدولة، بينما يُؤجل إنشاء جدول `scheduled_jobs` إلى `T15` ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L129)).
+- **سيناريو عملي يوضح الأثر:**
+  - عند تنفيذ `T06` أو `T14` في جلسة واحدة لـ Gemini Flash، يتجاوز حجم الشيفرة والاختبارات المطلوب توليدها والتحقق منها سعة الدورة الواحدة، مما يرفع احتمال الاختصار السطحي أو ترك أجزاء بلا اختبار.
+- **التعديل المحدد المقترح:**
+  1. قصر `T04` على القواعد والعقود الأساسية المشتركة (الأوزان، التوقيت، الأخطاء، `Idempotency-Key`، الصفحات، وهيكل OpenAPI الأساسي)، على أن تضيف كل مهمة لاحقة عقد مجالها الخاص.
+  2. تقسيم `T06` مسبقًا في `05-execution.md` إلى `T06-A` (إعدادات المصنع، الأصناف، المنتجات، الموردين، الوصفات) و`T06-B` (الأصول والمعدات وشاشاتها).
+  3. تقسيم `T14` مسبقًا إلى `T14-A` (مراجعة المسؤول: الحجز، التالف، الإلغاء، إعادة المعالجة) و`T14-B` (نقل المعدة، تسليم الوردية، والتوقف/الاستئناف الجماعي).
+  4. تضمين جدول `scheduled_jobs` في ترحيل `T07` بجانب `outbox_events` ([02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L68)) حتى تكتب فيه خدمات `T09–T13` مباشرة، وتختص `T15` بتشغيل `worker` والـ leases وإعادة المحاولة.
+- **اختبار قبول:**
+  - كل مهمة (أو جزء `A/B`) في `05-execution.md` لا تتطلب تعديل أكثر من مجال وظيفي واحد، وتعمل خدمات `T11` و`T13` على إدراج وإلغاء سجلات `scheduled_jobs` في قاعدة البيانات دون انتظار تعديل schema في `T15`.
+
+---
+
+## 3. المسائل التقنية التي تحتاج تحققًا لاحقًا (عند تنفيذ T03)
+
+بما أن المراجعة مستندة حصريًا إلى ملفات الحزمة دون اتصال بالويب أو تشغيل أوامر، تُسجل المسائل التقنية التالية للتحقق الفعلي عند بدء `T03`:
+1. **توافق إصدارات الحزم (`Next.js App Router` + `Better Auth` + `node-postgres` + `Zod`):** التحقق من توافق `Better Auth` مع محول `node-postgres` (`pg.Pool`) المباشر دون ORM في الإصدار المستقر المختار، وتثبيت النسخ في `package-lock.json` / `pnpm-lock.yaml`.
+2. **إعداد اتصالات PostgreSQL في بيئة التطوير والاختبار:** ضبط رمز `singleton` لـ `pg.Pool` أثناء `HMR` في تطوير Next.js لمنع استنزاف اتصالات PostgreSQL.
+3. **خط `Noto Sans Arabic` المحلي:** تضمين ملفات الخط محليًا داخل المستودع في `T03` للوفاء بشرط عدم الاعتماد على CDN خارجي أثناء التشغيل ([05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L35)).
+
+---
+
+## 4. ما يجب حسمه قبل بدء البناء مقابل ما يمكن تأجيله
+
+### أ. يجب حسمه وتصحيحه في نص المواصفات قبل بدء البناء الفعلي (`T03–T07`)
+هذه نقاط **تقنية/تصميمية** داخل المستندات وليست قرارات صناعية مفتوحة، وحسمها ضروري قبل كتابة الجداول والعقود:
+1. **مفتاح `material_accounts` ([P1-1]):** إضافة `(owner_type, owner_id)` لتمييز أرصدة أوامر الإنتاج المتوازية المسحوبة من نفس دفعة التخمير.
+2. **حقل إغلاق التوقف `ended_at` و`closing_type` في `stoppages` ([P1-2]):** لمنع بقاء التوقفات مفتوحة للأبد عند إكمال مرحلة `elapsed_time` بعد انتهاء مؤقتها أثناء التوقف.
+3. **دورة حياة سجل `idempotency_requests` ([P1-3]):** حفظ حالة `in_progress` والرفض التجاري الحتمي خارج نطاق `ROLLBACK` لكي يعمل المسار `GET /requests/:key` بدقة.
+4. **حالة `reworked` وقيد التفرّد في `stage_runs` ([P1-4]):** إضافة `attempt_no` إلى قيد التفرّد وإضافة حالة `reworked` للمحاولة المستبدلة مع قاعدة إخلاء/نقل المعدة.
+5. **علاقة أصناف الاستلام بأصناف التخمير ([P1-5]) وأنواع الأوزان الموجبة/الموقّعة ([P2-3]):** تثبيت فلتر فئة الصنف وعقد `SignedWeightGrams` للتقارير والتسويات.
+6. **استكمال جدول عقود API ([P2-4]):** إضافة مسارات طلب التصحيح، التوقف الجماعي، نقل المعدة، وتسليم الوردية قبل تنفيذ `T04`.
+
+### ب. يمكن تأجيله بأمان إلى ما قبل تجربة المصنع والإطلاق الفعلي (`T29`)
+وهي القرارات الصناعية والتشغيلية المعلنة أصلًا في [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L19-L33) (`D01` إلى `D12`)، إذ يمكن بناء النظام واختباره بالكامل بالسياسات التطويرية المقترحة، على أن تبقى بوابة الإنتاج الحقيقي معلقة على اعتماد صاحب المصنع ومسؤول الإنتاج لها:
+- المدد الزمنية الحقيقية للتخمير والفرن وحدود التوقف المسموحة (`D02`).
+- هوية المادة الخام الفعلية ووصفات التصنيع المعتمدة (`D01`، `D11`، `D12`).
+- دقة الميزان الفعلي في المصنع (`D03`) وسعة الأفران وعدد الأوعية (`D04`).
+- المنطقة الزمنية وبداية أسبوع التقارير (`D05`)، وتفاصيل العبوات (`D06`) والبيانات المالية الاختيارية (`D07`).
+- قناة التنبيه الخارجية والهاتف مغلق (`D08`)، وتوزيع الحسابات الفعلية (`D09`)، ومزود الاستضافة ومالك النسخ الاحتياطية (`D10`).
+
+---
+
+## 5. الملفات المقروءة وحدود المراجعة
+
+### الملفات التي قُرئت بالكامل (12 ملفًا):
+1. [README.md](file:///home/omar/Desktop/Duhn/README.md#L1-L27)
+2. [PLAN.md](file:///home/omar/Desktop/Duhn/PLAN.md#L1-L117)
+3. [GEMINI.md](file:///home/omar/Desktop/Duhn/GEMINI.md#L1-L62)
+4. [docs/01-design.md](file:///home/omar/Desktop/Duhn/docs/01-design.md#L1-L126)
+5. [docs/02-architecture-data.md](file:///home/omar/Desktop/Duhn/docs/02-architecture-data.md#L1-L179)
+6. [docs/03-production-automation.md](file:///home/omar/Desktop/Duhn/docs/03-production-automation.md#L1-L159)
+7. [docs/04-reports.md](file:///home/omar/Desktop/Duhn/docs/04-reports.md#L1-L110)
+8. [docs/05-execution.md](file:///home/omar/Desktop/Duhn/docs/05-execution.md#L1-L266)
+9. [docs/06-quality-operations.md](file:///home/omar/Desktop/Duhn/docs/06-quality-operations.md#L1-L137)
+10. [docs/07-references.md](file:///home/omar/Desktop/Duhn/docs/07-references.md#L1-L32)
+11. [docs/DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L1-L59)
+12. [docs/PROGRESS.md](file:///home/omar/Desktop/Duhn/docs/PROGRESS.md#L1-L70)
+
+### حدود المراجعة:
+- اقتصرت هذه المراجعة على القراءة والتحليل المستقل لملفات المواصفات والخطة الـ 12 أعلاه فقط، دون تعديل أي ملف، ودون إنشاء شيفرة أو تشغيل أوامر أو اختبارات تطبيق (إذ لا يوجد تطبيق منفذ حاليًا)، ودون استخدام مصادر ويب خارجية.
+- لم يُنسب أي قرار تشغيلي أو اعتماد جديد للمستخدم أو إدارة المصنع خارج ما ورد نصًا في قسم «قرارات مؤكدة من طلب المستخدم» في [DECISIONS.md](file:///home/omar/Desktop/Duhn/docs/DECISIONS.md#L5-L16).

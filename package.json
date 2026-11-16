@@ -1,0 +1,52 @@
+{
+  "name": "duhn-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12 <27"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3108",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3108",
+    "check": "tsc --noEmit",
+    "db:dev": "node scripts/dev-db.mjs",
+    "db:test": "node scripts/dev-db.mjs --test",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "demo:seed": "tsx scripts/seed-demo.ts",
+    "owner:create": "tsx scripts/create-owner.ts",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test",
+    "api:generate": "tsx scripts/generate-openapi.ts",
+    "api:check": "tsx scripts/generate-openapi.ts --check",
+    "materials:check": "tsx scripts/reconcile-materials.ts",
+    "notifications:worker": "tsx scripts/notifications-worker.ts"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-arabic": "5.3.0",
+    "better-auth": "1.7.16",
+    "dotenv": "18.0.9",
+    "lucide-react": "1.68.0",
+    "next": "16.4.5",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "0.0.1",
+    "swr": "2.5.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

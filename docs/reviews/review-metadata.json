@@ -1,0 +1,31 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "tool": "agy",
+  "initial_status": "SUCCESS",
+  "initial_duration_seconds": 538.306433854,
+  "scope": "Review only; no application tests; no source plan changes by reviewer",
+  "baseline_sha256": {
+    "GEMINI.md": "4eeb6710dba915f15a6a6c831972106f07f47f30c384c9e1fcfed1226ebc6783",
+    "PLAN.md": "08088410baaee8b0c7715d053a0ddb5eed6d1e1646776131a9a035bcf03d488e",
+    "README.md": "1f421559b56a12233d30f93b44499a10821394388e57320c7840eb155c34352c",
+    "docs/01-design.md": "dc9f64390ff23f817ab748388401cc3a07e8a439e31d854f4377b95935a5d752",
+    "docs/02-architecture-data.md": "49900d0bffb3cabc808293b682466a714550356866530dc892115facf1aa3492",
+    "docs/03-production-automation.md": "20d3783a37ff562d68953b235a3729e141edd6cf34e1bac1e4791fcb494c9a05",
+    "docs/04-reports.md": "beafdf07588bb006f9b9ffe9d3bc154a1d4e5306b71badabf245faa9a61d85a1",
+    "docs/05-execution.md": "b9e9e61e5ba49eb659ae60384e9fdb213aba3beddff36ccdf483f8b39dec0e41",
+    "docs/06-quality-operations.md": "e95bd9495c0671ea4952aa17bab2a54edabb8dadd3b0572beae40a1dfa8ec122",
+    "docs/07-references.md": "6549aefd22bad5d6a7948033a6b18633f10a7ad1ae5bb72dc442f158b3ca699b",
+    "docs/DECISIONS.md": "c0587425975ffbbf9ab021a92a0d0c854fdca4ce37838171319d83e2f165bae7",
+    "docs/PROGRESS.md": "0e5ed2704dab88874f008662c610288ad46c28fe3331f5443584825d41e58932"
+  },
+  "followup_status": "SUCCESS",
+  "followup_reported_duration_seconds": 731.968237843,
+  "duration_note": "Duration values are reported by agy; resumed-conversation duration may be cumulative.",
+  "original_plan_files_unchanged": true,
+  "final_review_validation": {
+    "original_files_verified": 12,
+    "local_links_verified": 22,
+    "findings": 8,
+    "passed": true
+  }
+}
