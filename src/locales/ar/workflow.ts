@@ -2,7 +2,7 @@ export const workflowUi = {
   workspace: 'مساحة العمل',
   factory: 'نظام إدارة المصنع',
   navigation: 'أقسام المصنع',
-  environment: 'نسخة التطوير',
+  environment: process.env.NODE_ENV === 'production' ? 'الإصدار التشغيلي' : 'نسخة التطوير',
   back: 'السابق',
   next: 'متابعة',
   review: 'مراجعة البيانات',

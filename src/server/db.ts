@@ -37,7 +37,7 @@ export function getPool() {
       ssl: poolSsl(connectionString),
       options: poolOptions(connectionString),
       max: 8,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
       statement_timeout: 10000,
       application_name: 'duhn-web',
