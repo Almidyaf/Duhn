@@ -10,6 +10,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: { default: `${factoryProfile.name} — إدارة المصنع`, template: `%s | ${factoryProfile.name}` },
   description: `نظام إدارة مصنع ${factoryProfile.name}`,
+  icons: { icon: '/logo.png' },
   robots: { index: false, follow: false },
 };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

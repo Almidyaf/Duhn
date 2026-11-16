@@ -1,5 +1,4 @@
 import {
-  Droplets,
   PackageCheck,
   FlaskConical,
   ArrowLeft,
@@ -18,7 +17,7 @@ export default function LoginPage() {
       <section className="login-panel">
         <div className="brand">
           <span className="brand-mark">
-            <Droplets size={26} />
+            <img src="/logo.png" alt={ui.brand} className="brand-logo" />
           </span>
           <span>
             <strong>{ui.brand}</strong>

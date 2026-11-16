@@ -3,7 +3,6 @@ import {
   ShoppingBag,
   FlaskConical,
   ChartNoAxesCombined,
-  Droplets,
   Settings,
   ChevronLeft,
   Globe,
@@ -32,7 +31,7 @@ export function Shell({
       <aside className="sidebar">
         <Link className="brand" href="/production">
           <span className="brand-mark">
-            <Droplets size={25} />
+            <img src="/logo.png" alt={ui.brand} className="brand-logo" />
           </span>
           <span>
             <strong>{ui.brand}</strong>
@@ -63,12 +62,11 @@ export function Shell({
           ))}
         </nav>
         <div className="sidebar-note">
-          <Droplets size={18} />
+          <Globe size={17} />
           <div>
             <strong>{ui.brandSubtitle}</strong>
             <small>{w.environment}</small>
             <a className="sidebar-site-link" href={factoryProfile.websiteUrl}>
-              <Globe size={12} />
               <span>{ui.officialSite}</span>
             </a>
           </div>
