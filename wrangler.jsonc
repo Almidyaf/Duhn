@@ -8,6 +8,12 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "95c85beb39a84d82ac1f7d9d6544f689"
+    }
+  ],
   "vars": {
     "BETTER_AUTH_URL": "https://duhn.almidyaf.com",
     "NEXT_PUBLIC_SUPABASE_URL": "https://kzrtiaclfkhnwewsxvnl.supabase.co",
