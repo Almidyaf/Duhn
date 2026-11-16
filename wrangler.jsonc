@@ -4,6 +4,9 @@
   "name": "duhn",
   "compatibility_date": "2026-11-16",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": {
+    "enabled": true
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
