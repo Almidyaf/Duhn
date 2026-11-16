@@ -4,6 +4,12 @@ const config: NextConfig = {
   distDir: process.env.DUHN_TEST === '1' ? '.next-test' : '.next',
   poweredByHeader: false,
   turbopack: { root: process.cwd() },
+  experimental: {
+    staleTimes: {
+      dynamic: 300,
+      static: 600,
+    },
+  },
   async headers() {
     return [
       {

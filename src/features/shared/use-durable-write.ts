@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import type { z } from 'zod';
 import { ui } from '@/locales/ar/ui';
 export type Pending = {
@@ -19,6 +21,8 @@ export function useDurableWrite(
     errors: Record<string, string>;
   },
 ) {
+  const router = useRouter();
+  const { mutate: globalMutate } = useSWRConfig();
   const [pending, setPending] = useState<Pending | null>(null);
   const [ready, setReady] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -53,6 +57,8 @@ export function useDurableWrite(
     setMessage(config.saved);
     try {
       await onSaved(result, request);
+      void globalMutate(() => true, undefined, { revalidate: true });
+      router.refresh();
     } catch {
       setError(config.loadError);
     }

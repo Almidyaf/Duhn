@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import useSWR from 'swr';
+import { useRouter } from 'next/navigation';
+import useSWR, { useSWRConfig } from 'swr';
 import { z } from 'zod';
 import {
   Plus,
@@ -39,6 +40,8 @@ async function fetchPage(url: string): Promise<Page> {
 }
 
 export function AssetsManager({ initial, userId }: { initial: Page; userId: string }) {
+  const router = useRouter();
+  const { mutate: globalMutate } = useSWRConfig();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
@@ -69,7 +72,7 @@ export function AssetsManager({ initial, userId }: { initial: Page; userId: stri
     mutate,
   } = useSWR(url, fetchPage, {
     fallbackData: url === initialUrl ? initial : undefined,
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
     refreshInterval: 0,
   });
 
@@ -199,6 +202,8 @@ export function AssetsManager({ initial, userId }: { initial: Page; userId: stri
         request.method === 'DELETE' ? 'تم حذف الأصل بنجاح.' : request.method === 'POST' ? ui.saved : ui.updated,
       );
       await mutate();
+      void globalMutate(() => true, undefined, { revalidate: true });
+      router.refresh();
     } catch {
       setError(ui.errors.SERVICE_UNAVAILABLE);
     } finally {
@@ -259,6 +264,8 @@ export function AssetsManager({ initial, userId }: { initial: Page; userId: stri
         setOpen(false);
         setMessage(ui.saved);
         await mutate();
+        void globalMutate(() => true, undefined, { revalidate: true });
+        router.refresh();
       } else setMessage(ui.unknown);
     } catch {
       setError(ui.networkError);

@@ -53,6 +53,7 @@ export function Shell({
               key={key}
               className={`nav-item ${section === key ? 'selected' : ''}`}
               href={href}
+              prefetch={true}
               aria-current={section === key ? 'page' : undefined}
             >
               <Icon size={19} />
@@ -85,6 +86,7 @@ export function Shell({
             <Link
               className="icon-button settings-link"
               href="/settings"
+              prefetch={true}
               aria-label={ui.settings}
               title={ui.settings}
             >

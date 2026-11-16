@@ -22,6 +22,7 @@ export function PurchaseNav({ active }: { active: 'receipts' | 'stock' | Catalog
           key={item.key}
           className={`purchase-destination${active === item.key ? ' selected' : ''}`}
           href={item.href}
+          prefetch={true}
           aria-current={active === item.key ? 'page' : undefined}
         >
           <span className="destination-icon">

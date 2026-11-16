@@ -2217,18 +2217,3 @@ fieldset:disabled {
 .production-path>summary:focus-visible { outline:3px solid #285cce;outline-offset:-3px; }
 @media(max-width:720px){.production-path>summary{padding:14px;gap:10px;flex-wrap:wrap;}.path-identity{flex-basis:calc(100% - 30px);}.path-identity strong{font-size:13px;}.path-chevron{margin-inline-start:auto;}.production-paths{gap:16px;}}
 @media(prefers-reduced-motion:reduce){.path-chevron{transition:none;}}
-
-.skeleton-bar {
-  display: block;
-  height: 14px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, #edf2f8 25%, #e1e9f4 50%, #edf2f8 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.2s ease-in-out infinite;
-}
-.skeleton-bar.title { height: 26px; width: 180px; }
-.skeleton-bar.button { height: 40px; width: 130px; border-radius: 10px; }
-.skeleton-rows { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
-.skeleton-row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 0.7fr; gap: 16px; align-items: center; }
-@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-@media(prefers-reduced-motion:reduce){.skeleton-bar{animation:none;}}

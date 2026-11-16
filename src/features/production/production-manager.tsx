@@ -61,7 +61,7 @@ export function ProductionManager({
   const url = `/api/v1/production-orders?${params}`;
   const { data, error, isLoading, mutate } = useSWR<ProductionPage>(url, fetchJson, {
     fallbackData: url === '/api/v1/production-orders?q=' ? initial : undefined,
-    refreshInterval: 30000,
+    refreshInterval: 0,
   });
 
   const now = useServerClock(data?.server_time ?? initial.server_time);
