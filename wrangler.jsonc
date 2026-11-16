@@ -8,6 +8,11 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "vars": {
+    "BETTER_AUTH_URL": "https://duhn.almidyaf.com",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://kzrtiaclfkhnwewsxvnl.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_zMbdz8aR6uIvhhHcqYWFZg_-i_nGxlD"
+  },
   "routes": [
     {
       "pattern": "duhn.almidyaf.com",
