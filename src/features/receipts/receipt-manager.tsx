@@ -160,7 +160,7 @@ export function ReceiptManager({
                         </small>
                       </td>
                       <td>
-                        {receipt.supplier_name ?? r.opening}
+                        {receipt.supplier_name ?? (receipt.kind === 'opening' ? r.opening : r.purchase)}
                         <small className="cell-subtitle">{receipt.reference || '—'}</small>
                       </td>
                       <td>

@@ -32,11 +32,10 @@ export default async function CatalogPage({
   if (member.role === 'operator') redirect('/access');
   const params = await searchParams;
   const view = catalogViewSchema.safeParse(params.view).data ?? 'raw';
-  const productView = view === 'raw' || view === 'finished';
-  const initial = await listCatalog(member, productView ? 'products' : 'suppliers', {
+  const initial = await listCatalog(member, 'products', {
     q: '',
     status: 'all',
-    ...(productView ? { kind: view as 'raw' | 'finished' } : {}),
+    kind: view as 'raw' | 'finished',
   });
   return (
     <Shell member={member} section="purchases">

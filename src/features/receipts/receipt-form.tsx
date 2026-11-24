@@ -13,8 +13,8 @@ import type { useReceiptWrite } from './use-receipt-write';
 import { receiptUi as r } from '@/locales/ar/receipts';
 import { workflowUi as w } from '@/locales/ar/workflow';
 import { ui } from '@/locales/ar/ui';
-type Line = { key: string; product: CatalogItem | null; weight: string };
-const empty = (key: string): Line => ({ key, product: null, weight: '' });
+type Line = { key: string; product: CatalogItem | null; weight: string; price: string };
+const empty = (key: string): Line => ({ key, product: null, weight: '', price: '' });
 export function ReceiptForm({
   kind,
   userId,
@@ -27,7 +27,6 @@ export function ReceiptForm({
   onClose: () => void;
 }) {
   const [step, setStep] = useState(0),
-    [supplier, setSupplier] = useState<CatalogItem | null>(null),
     [reference, setReference] = useState(''),
     [note, setNote] = useState('');
   const [openingReason, setOpeningReason] = useState('');
@@ -78,10 +77,6 @@ export function ReceiptForm({
     if (entryLocked) return;
     write.setError('');
     if (step === 0) {
-      if (kind === 'purchase' && !supplier) {
-        write.setError('اختر المورد أولًا.');
-        return;
-      }
       if (kind === 'opening' && !openingReason) {
         write.setError('اختر سبب التسجيل أولًا.');
         return;
@@ -111,12 +106,13 @@ export function ReceiptForm({
       try {
         const body = receiptInputSchema.parse({
           kind,
-          supplier_id: kind === 'purchase' ? supplier?.id : null,
+          supplier_id: null,
           reference: kind === 'purchase' ? reference : '',
           note,
           lines: lines.map((l) => ({
             product_id: l.product?.id,
             quantity_g: parseGroupedWeightInput(l.weight),
+            ...(l.price ? { unit_price: l.price } : {}),
           })),
         });
         setReview(body);
@@ -154,12 +150,6 @@ export function ReceiptForm({
             <>
               {kind === 'purchase' ? (
                 <>
-                  <CatalogPicker
-                    label={r.supplier}
-                    entity="suppliers"
-                    value={supplier}
-                    onChange={setSupplier}
-                  />
                   <label>
                     {r.reference}
                     <span className="optional">{ui.optional}</span>
@@ -221,7 +211,7 @@ export function ReceiptForm({
             <>
               <div className="selected-source">
                 <span>{r.source}</span>
-                <strong>{kind === 'opening' ? r.opening : supplier?.name}</strong>
+                <strong>{kind === 'opening' ? r.opening : r.purchase}</strong>
                 {reference && <small>{reference}</small>}
               </div>
               {lines.map((line, index) => (
@@ -330,6 +320,28 @@ export function ReceiptForm({
                     </span>
                     <WeightHint value={line.weight} />
                   </label>
+                  {kind === 'purchase' && (
+                    <label>
+                      {r.unitPrice}
+                      <span className="optional">{ui.optional}</span>
+                      <span className="weight-input">
+                        <input
+                          aria-label={r.unitPrice}
+                          inputMode="decimal"
+                          dir="ltr"
+                          value={line.price}
+                          maxLength={18}
+                          placeholder={r.priceExample}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^\d.]/g, '');
+                            change(line.key, { price: v });
+                          }}
+                        />
+                        <span>{r.currency}</span>
+                      </span>
+                      <small className="field-hint">{r.priceHint}</small>
+                    </label>
+                  )}
                 </section>
               ))}
               <div className="entry-add-row">
@@ -351,8 +363,8 @@ export function ReceiptForm({
             <div className="entry-review">
               <dl className="review-facts">
                 <div>
-                  <dt>{r.source}</dt>
-                  <dd>{kind === 'opening' ? r.opening : supplier?.name}</dd>
+                  <dt>{r.kind}</dt>
+                  <dd>{kind === 'opening' ? r.opening : r.purchase}</dd>
                 </div>
                 {reference && (
                   <div>
@@ -374,6 +386,11 @@ export function ReceiptForm({
                     <strong>
                       <bdi>{formatWeight(review.lines[i].quantity_g)}</bdi> {w.unit}
                     </strong>
+                    {line.price && (
+                      <span className="review-price">
+                        <bdi>{line.price}</bdi> {r.currency}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

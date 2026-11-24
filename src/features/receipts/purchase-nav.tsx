@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import { Boxes, TreePine, Droplets, Truck } from 'lucide-react';
+import { Boxes, TreePine, Droplets, ClipboardList } from 'lucide-react';
 import type { CatalogView } from '@/contracts/catalog';
 
 const destinations = [
+  { key: 'receipts', href: '/purchases', label: 'استلام المواد', icon: ClipboardList },
   { key: 'stock', href: '/purchases/stock', label: 'أرصدة المخزون', icon: Boxes },
   { key: 'raw', href: '/purchases/catalog?view=raw', label: 'المواد الخام', icon: TreePine },
   {
@@ -11,7 +12,6 @@ const destinations = [
     label: 'دهون العود',
     icon: Droplets,
   },
-  { key: 'suppliers', href: '/purchases/catalog?view=suppliers', label: 'الموردون', icon: Truck },
 ] as const;
 
 export function PurchaseNav({ active }: { active: 'receipts' | 'stock' | CatalogView }) {

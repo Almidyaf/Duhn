@@ -3,20 +3,22 @@ import { positiveWeightSchema } from './weight';
 import { expectedVersionSchema } from './requests';
 import { cursorSchema, type Cursor } from './catalog';
 const line = z
-  .object({ product_id: z.uuid(), quantity_g: positiveWeightSchema })
+  .object({
+    product_id: z.uuid(),
+    quantity_g: positiveWeightSchema,
+    unit_price: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/).optional(),
+  })
   .strict();
 export const receiptInputSchema = z
   .object({
     kind: z.enum(['purchase', 'opening']),
-    supplier_id: z.uuid().nullable(),
+    supplier_id: z.uuid().nullable().default(null),
     reference: z.string().trim().max(120).default(''),
     note: z.string().trim().max(1000).default(''),
     lines: z.array(line).min(1).max(25),
   })
   .strict()
   .superRefine((input, ctx) => {
-    if (input.kind === 'purchase' && !input.supplier_id)
-      ctx.addIssue({ code: 'custom', message: 'Supplier required', path: ['supplier_id'] });
     if (input.kind === 'opening' && (input.supplier_id || input.note.length < 3 || input.reference))
       ctx.addIssue({
         code: 'custom',
@@ -59,6 +61,7 @@ export type ReceiptLine = {
   product_name: string;
   type_name: string;
   quantity_g: string;
+  unit_price: string | null;
   lot_id: string;
   lot_code: string;
   account_id: string;
@@ -76,6 +79,7 @@ export type RawLot = {
   receipt_id: string;
   receipt_code: string;
   supplier_name: string | null;
+  unit_price: string | null;
   quantity_g: string;
   version: number;
   created_at: string;

@@ -85,7 +85,7 @@ export function ReceiptDetailView({
       <div className="receipt-summary">
         <div>
           <small>{r.source}</small>
-          <strong>{receipt.supplier_name ?? r.opening}</strong>
+          <strong>{receipt.supplier_name ?? (receipt.kind === 'opening' ? r.opening : r.purchase)}</strong>
         </div>
         <div>
           <small>{r.reference}</small>

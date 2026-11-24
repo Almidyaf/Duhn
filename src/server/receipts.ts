@@ -25,7 +25,7 @@ const receiptColumns = `r.id,r.code::text,r.kind,r.supplier_id,r.supplier_name,r
 async function detail(client: Pick<PoolClient, 'query'>, id: string): Promise<ReceiptDetail> {
   // One statement snapshot includes both header and balances.
   const result = await client.query<{ receipt: Receipt; lines: ReceiptLine[] }>(
-    `SELECT to_jsonb(h) AS receipt,coalesce((SELECT jsonb_agg(to_jsonb(x) ORDER BY x.lot_code::bigint) FROM (SELECT l.id,l.product_id,l.product_name,l.type_name,l.quantity_g::numeric(18,3)::text,m.id AS lot_id,m.code::text AS lot_code,a.id AS account_id,b.quantity_g::text AS balance_g,b.version AS balance_version FROM receipt_lines l JOIN material_lots m ON m.receipt_line_id=l.id JOIN material_accounts a ON a.raw_lot_id=m.id JOIN material_balances b ON b.account_id=a.id WHERE l.receipt_id=h.id) x),'[]'::jsonb) AS lines FROM (SELECT ${receiptColumns} FROM receipts r WHERE r.id=$1) h`,
+    `SELECT to_jsonb(h) AS receipt,coalesce((SELECT jsonb_agg(to_jsonb(x) ORDER BY x.lot_code::bigint) FROM (SELECT l.id,l.product_id,l.product_name,l.type_name,l.quantity_g::numeric(18,3)::text,l.unit_price::text AS unit_price,m.id AS lot_id,m.code::text AS lot_code,a.id AS account_id,b.quantity_g::text AS balance_g,b.version AS balance_version FROM receipt_lines l JOIN material_lots m ON m.receipt_line_id=l.id JOIN material_accounts a ON a.raw_lot_id=m.id JOIN material_balances b ON b.account_id=a.id WHERE l.receipt_id=h.id) x),'[]'::jsonb) AS lines FROM (SELECT ${receiptColumns} FROM receipts r WHERE r.id=$1) h`,
     [id],
   );
   if (!result.rowCount) throw new AppError('NOT_FOUND', 404);
@@ -107,7 +107,7 @@ export async function listRawLots(member: Member, query: { q: string; cursor?: C
     cursor = 'AND (m.created_at,m.id)<($2::timestamptz,$3::uuid)';
   }
   const result = await getPool().query<RawLot>(
-    `SELECT m.id,m.code::text,m.product_id,p.name AS product_name,coalesce(t.name,'') AS type_name,r.id AS receipt_id,r.code::text AS receipt_code,r.supplier_name,b.quantity_g::text,b.version,${date('m.created_at')} AS created_at FROM material_lots m JOIN products p ON p.id=m.product_id LEFT JOIN product_types t ON t.id=p.type_id JOIN receipt_lines l ON l.id=m.receipt_line_id JOIN receipts r ON r.id=l.receipt_id JOIN material_accounts a ON a.raw_lot_id=m.id JOIN material_balances b ON b.account_id=a.id WHERE b.quantity_g>0 AND (p.name ILIKE $1 OR l.product_name ILIKE $1 OR m.code::text ILIKE $1 OR r.reference ILIKE $1) ${cursor} ORDER BY m.created_at DESC,m.id DESC LIMIT 26`,
+    `SELECT m.id,m.code::text,m.product_id,p.name AS product_name,coalesce(t.name,'') AS type_name,r.id AS receipt_id,r.code::text AS receipt_code,r.supplier_name,l.unit_price::text AS unit_price,b.quantity_g::text,b.version,${date('m.created_at')} AS created_at FROM material_lots m JOIN products p ON p.id=m.product_id LEFT JOIN product_types t ON t.id=p.type_id JOIN receipt_lines l ON l.id=m.receipt_line_id JOIN receipts r ON r.id=l.receipt_id JOIN material_accounts a ON a.raw_lot_id=m.id JOIN material_balances b ON b.account_id=a.id WHERE b.quantity_g>0 AND (p.name ILIKE $1 OR l.product_name ILIKE $1 OR m.code::text ILIKE $1 OR r.reference ILIKE $1) ${cursor} ORDER BY m.created_at DESC,m.id DESC LIMIT 26`,
     values,
   );
   const items = result.rows.slice(0, 25);
@@ -174,8 +174,8 @@ export async function createReceipt(member: Member, key: string, input: ReceiptI
             lotId = randomUUID(),
             accountId = randomUUID();
           await client.query(
-            'INSERT INTO receipt_lines(id,receipt_id,product_id,product_name,type_name,quantity_g) VALUES($1,$2,$3,$4,$5,$6::numeric)',
-            [lineId, receiptId, product.id, product.name, '', line.quantity_g],
+            'INSERT INTO receipt_lines(id,receipt_id,product_id,product_name,type_name,quantity_g,unit_price) VALUES($1,$2,$3,$4,$5,$6::numeric,$7::numeric)',
+            [lineId, receiptId, product.id, product.name, '', line.quantity_g, line.unit_price ?? null],
           );
           await client.query(
             'INSERT INTO material_lots(id,receipt_line_id,product_id) VALUES($1,$2,$3)',

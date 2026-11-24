@@ -26,7 +26,7 @@ export function CatalogManager({
   userId: string;
   view: CatalogView;
 }) {
-  const entity: CatalogEntity = tab === 'raw' || tab === 'finished' ? 'products' : 'suppliers';
+  const entity: CatalogEntity = 'products';
   const kind = tab === 'finished' ? 'finished' : 'raw';
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
@@ -108,7 +108,6 @@ export function CatalogManager({
     if (!deleteTarget || write.locked) return;
     await write.submit(`/api/v1/catalog/${entity}/${deleteTarget.id}`, 'PATCH', {
       name: deleteTarget.name,
-      ...(entity === 'suppliers' ? { contact: deleteTarget.contact ?? '' } : {}),
       active: false,
       expected_version: deleteTarget.version,
     });
@@ -120,29 +119,24 @@ export function CatalogManager({
     const form = new FormData(event.currentTarget);
     const fields = {
       name: form.get('name'),
-      ...(entity === 'suppliers' ? { contact: form.get('contact') } : {}),
     };
     const parsed = selected
       ? catalogUpdateSchemas[entity].safeParse({
           ...fields,
           active: form.get('active') === 'on',
           expected_version: selected.version,
-          ...(entity === 'products' && kind === 'finished' && linkedRaw
+          ...(kind === 'finished' && linkedRaw
             ? { raw_product_id: linkedRaw.id }
             : {}),
         })
       : catalogInputSchemas[entity].safeParse({
           ...fields,
-          ...(entity === 'products'
-            ? {
-                kind,
-                ...(kind === 'finished' ? { raw_product_id: linkedRaw?.id } : {}),
-              }
-            : {}),
+          kind,
+          ...(kind === 'finished' ? { raw_product_id: linkedRaw?.id } : {}),
         });
     if (!parsed.success) {
       write.setError(
-        entity === 'products' && kind === 'finished' && !linkedRaw
+        kind === 'finished' && !linkedRaw
           ? 'اختر المادة الخام المرتبطة (العود) أولًا.'
           : c.errors.INVALID_INPUT,
       );
@@ -155,7 +149,7 @@ export function CatalogManager({
     );
   }
 
-  const addLabel = tab === 'raw' ? c.addRaw : tab === 'finished' ? c.addFinished : c.add.suppliers;
+  const addLabel = tab === 'raw' ? c.addRaw : c.addFinished;
 
   return (
     <>
@@ -223,7 +217,6 @@ export function CatalogManager({
                     {entity === 'products' && <th>الرمز</th>}
                     <th>{ui.name}</th>
                     {tab === 'finished' && <th>المادة الخام (العود)</th>}
-                    {tab === 'suppliers' && <th>{c.contact}</th>}
                     <th>{ui.status}</th>
                     <th>{ui.action}</th>
                   </tr>
@@ -238,7 +231,6 @@ export function CatalogManager({
                         <strong>{item.name}</strong>
                       </td>
                       {tab === 'finished' && <td>{item.raw_product_name ?? '—'}</td>}
-                      {tab === 'suppliers' && <td>{item.contact || '—'}</td>}
                       <td>
                         <span className={`status-pill ${item.active ? 'active' : 'inactive'}`}>
                           {item.active ? ui.active : ui.inactive}
@@ -309,9 +301,7 @@ export function CatalogManager({
             <label>
               {tab === 'raw'
                 ? 'اسم المادة الخام (العود)'
-                : tab === 'finished'
-                  ? 'اسم دهن العود'
-                  : ui.name}
+                : 'اسم دهن العود'}
               <input name="name" required minLength={2} maxLength={120} defaultValue={selected?.name ?? ''} />
             </label>
             {tab === 'finished' && (
@@ -324,12 +314,6 @@ export function CatalogManager({
                 value={linkedRaw}
                 onChange={setLinkedRaw}
               />
-            )}
-            {tab === 'suppliers' && (
-              <label>
-                {c.contact}
-                <input name="contact" maxLength={120} defaultValue={selected?.contact ?? ''} />
-              </label>
             )}
             {selected && (
               <label className="checkbox-label">

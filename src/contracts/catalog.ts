@@ -3,7 +3,7 @@ import { expectedVersionSchema } from './requests';
 
 export const catalogEntitySchema = z.enum(['types', 'products', 'suppliers']);
 export type CatalogEntity = z.infer<typeof catalogEntitySchema>;
-export const catalogViewSchema = z.enum(['raw', 'finished', 'suppliers']);
+export const catalogViewSchema = z.enum(['raw', 'finished']);
 export type CatalogView = z.infer<typeof catalogViewSchema>;
 const name = z.string().trim().min(2).max(120);
 export const typeInputSchema = z.object({ name }).strict();

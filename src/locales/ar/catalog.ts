@@ -1,5 +1,5 @@
 export const catalogUi = {
-  title: 'المنتجات والموردون',
+  title: 'المنتجات',
   setup: 'إعداد المشتريات',
 
   tabs: {

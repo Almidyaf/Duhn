@@ -76,6 +76,7 @@ export function RawStock({ initial }: { initial: RawLotPage }) {
                     <th>{r.product}</th>
                     <th>{r.lot}</th>
                     <th>{r.source}</th>
+                    <th>{r.unitPrice}</th>
                     <th>{r.balance}</th>
                     <th>{ui.action}</th>
                   </tr>
@@ -89,10 +90,15 @@ export function RawStock({ initial }: { initial: RawLotPage }) {
                       </td>
                       <td dir="ltr">LOT-{lot.code.padStart(4, '0')}</td>
                       <td>
-                        {lot.supplier_name ?? r.opening}
+                        {lot.supplier_name ?? r.purchase}
                         <small className="cell-subtitle" dir="ltr">
                           RCV-{lot.receipt_code.padStart(4, '0')}
                         </small>
+                      </td>
+                      <td>
+                        {lot.unit_price ? (
+                          <><strong dir="ltr">{lot.unit_price}</strong> {r.currency}</>
+                        ) : '—'}
                       </td>
                       <td>
                         <strong dir="ltr">{formatWeight(lot.quantity_g)}</strong> {r.gram}
