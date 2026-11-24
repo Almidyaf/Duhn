@@ -51,7 +51,8 @@ export function OrderProcessing({
         : '',
     ),
     [destination, setDestination] = useState<'store' | 'sell' | null>(null),
-    [pauseReason, setPauseReason] = useState('');
+    [pauseReason, setPauseReason] = useState(''),
+    [showEarlyComplete, setShowEarlyComplete] = useState(false);
   useEffect(() => {
     setWeight(
       o.processing_state === 'packing_running' && o.available_g
@@ -59,7 +60,8 @@ export function OrderProcessing({
         : '',
     );
     if (o.processing_state !== 'finished') setDestination(null);
-  }, [o.processing_state, o.available_g]);
+    setShowEarlyComplete(false);
+  }, [o.processing_state, o.available_g, o.id]);
   const state = o.processing_state;
   const version = state ? o.processing_version! : o.stage_version;
   const amount = state ? o.available_g! : o.quantity_g;
@@ -200,9 +202,24 @@ export function OrderProcessing({
               </label>
             </>
           )}
-          <button className="secondary-button" disabled={write.locked}>
-            {o.stage_status === 'paused' ? 'استئناف الفرن' : 'إيقاف مؤقت للفرن'}
-          </button>
+          <div className="button-row">
+            <button className="secondary-button" disabled={write.locked}>
+              {o.stage_status === 'paused' ? 'استئناف الفرن' : 'إيقاف مؤقت للفرن'}
+            </button>
+            {!showEarlyComplete && (!ready || o.stage_status === 'paused') && (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={write.locked}
+                onClick={() => {
+                  write.setError('');
+                  setShowEarlyComplete(true);
+                }}
+              >
+                إيقاف نهائي مبكر للفرن
+              </button>
+            )}
+          </div>
         </form>
       )}
       <div className="processing-results">
@@ -235,9 +252,9 @@ export function OrderProcessing({
           </span>
         )}
       </div>
-      {completing && ready && o.stage_status !== 'paused' && (
+      {completing && ((ready && o.stage_status !== 'paused') || showEarlyComplete) && (
         <form
-          key={completing}
+          key={completing + (showEarlyComplete ? '-early' : '')}
           onSubmit={async (e) => {
             e.preventDefault();
             if (write.locked) return;
@@ -246,6 +263,7 @@ export function OrderProcessing({
               await send(completing, {
                 quantity_g: parseGroupedWeightInput(weight),
                 inspection_confirmed: true,
+                early_completion: showEarlyComplete || !ready,
                 note: String(form.get('note') ?? ''),
               });
             } catch {
@@ -253,7 +271,12 @@ export function OrderProcessing({
             }
           }}
         >
-          <h3>{label}</h3>
+          <h3>{showEarlyComplete ? 'إيقاف نهائي مبكر للفرن وتسجيل الناتج' : label}</h3>
+          {showEarlyComplete && (
+            <p className="field-hint">
+              في حال اكتمال عملية التقطير بنجاح قبل انتهاء الوقت المحدد، أدخل الوزن الناتج لإخلاء الفرن والانتقال مباشرة إلى مرحلة التصفية.
+            </p>
+          )}
           <div className="processing-fields">
             <label>
               الوزن الناتج بالجرام
@@ -270,12 +293,13 @@ export function OrderProcessing({
               <WeightHint value={weight} />
             </label>
             <label>
-              ملاحظة أو سبب عدم وجود ناتج
+              {showEarlyComplete ? 'ملاحظة أو سبب الإيقاف المبكر' : 'ملاحظة أو سبب عدم وجود ناتج'}
               <input
                 name="note"
                 required={isZeroOutput}
                 minLength={isZeroOutput ? 3 : undefined}
                 maxLength={1000}
+                placeholder={showEarlyComplete ? 'مثال: اكتمل التقطير وخرج كامل الدهن بنجاح' : undefined}
                 disabled={write.locked}
               />
               {isZeroOutput && (
@@ -297,11 +321,27 @@ export function OrderProcessing({
           )}
           <label className="checkbox-label">
             <input type="checkbox" required disabled={write.locked} />
-            {!state ? 'فحصت الناتج وأخرجته من الفرن' : 'فحصت الناتج وأؤكد الوزن المسجل'}
+            {showEarlyComplete
+              ? 'فحصت الناتج وأؤكد اكتمال عملية التقطير بنجاح وإخلاء الفرن'
+              : !state
+                ? 'فحصت الناتج وأخرجته من الفرن'
+                : 'فحصت الناتج وأؤكد الوزن المسجل'}
           </label>
-          <button className="primary-button" disabled={write.locked || difference?.startsWith('-')}>
-            {label}
-          </button>
+          <div className="button-row">
+            <button className="primary-button" disabled={write.locked || difference?.startsWith('-')}>
+              {showEarlyComplete ? 'تأكيد الإيقاف النهائي المبكر' : label}
+            </button>
+            {showEarlyComplete && (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={write.locked}
+                onClick={() => setShowEarlyComplete(false)}
+              >
+                إلغاء والعودة
+              </button>
+            )}
+          </div>
         </form>
       )}
       {(state === 'filter_queued' || state === 'packing_queued') && (

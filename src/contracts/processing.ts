@@ -17,6 +17,7 @@ export const processingSchema = z
     expected_version: expectedVersionSchema,
     quantity_g: weightSchema.optional(),
     inspection_confirmed: z.literal(true).optional(),
+    early_completion: z.boolean().optional(),
     note: z.string().trim().max(1000).default(''),
   })
   .strict()

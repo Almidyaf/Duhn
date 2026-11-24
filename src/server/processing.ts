@@ -74,7 +74,13 @@ export function processOrder(member: Member, key: string, orderId: string, input
       }
       return { ok: true };
     }
-    if (completingOven && pause) throw new AppError('OVEN_PAUSED', 409);
+    if (completingOven && pause) {
+      if (!parsed.early_completion) throw new AppError('OVEN_PAUSED', 409);
+      await client.query(
+        'UPDATE oven_pauses SET ended_at=clock_timestamp(),resumed_by=$2 WHERE id=$1',
+        [pause.id, member.id],
+      );
+    }
     if (parsed.action === 'start_filter' || parsed.action === 'start_packing') {
       const kind = parsed.action === 'start_filter' ? 'filter' : 'packing';
       if (!row || row.state !== kind + '_queued') throw new AppError('INVALID_STATE', 409);
@@ -136,11 +142,12 @@ export function processOrder(member: Member, key: string, orderId: string, input
         : 'packing';
     if (completingOven) {
       if (stage.status !== 'running' || row) throw new AppError('INVALID_STATE', 409);
-      if (
-        (await client.query('SELECT clock_timestamp()>= $1::timestamptz AS due', [stage.due_at]))
-          .rows[0].due !== true
-      )
+      const isDue = (
+        await client.query('SELECT clock_timestamp()>= $1::timestamptz AS due', [stage.due_at])
+      ).rows[0].due === true;
+      if (!isDue && !parsed.early_completion) {
         throw new AppError('INSPECTION_NOT_DUE', 409);
+      }
     } else if (!row || row.state !== kind + '_running') throw new AppError('INVALID_STATE', 409);
     const sourceId = completingOven
       ? (await client.query('SELECT id FROM material_accounts WHERE stage_run_id=$1', [stage.id]))
