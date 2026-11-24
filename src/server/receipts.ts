@@ -7,9 +7,11 @@ import { AppError } from './errors';
 import { lockBalances, postMovement, type MaterialPosting } from './material-ledger';
 import {
   receiptInputSchema,
+  updateReceiptSchema,
   voidReceiptSchema,
   receiptQuerySchema,
   type ReceiptInput,
+  type UpdateReceiptInput,
   type VoidReceiptInput,
   type Receipt,
   type ReceiptDetail,
@@ -128,7 +130,7 @@ export async function createReceipt(member: Member, key: string, input: ReceiptI
       'receipt.create',
       parsed,
       async (client) => {
-        let supplierName: string | null = null;
+        let supplierName: string | null = parsed.supplier_name ?? null;
         if (parsed.supplier_id) {
           const supplier = await client.query(
             'SELECT name,active FROM suppliers WHERE id=$1 FOR SHARE',
@@ -220,6 +222,86 @@ export async function createReceipt(member: Member, key: string, input: ReceiptI
     throw error;
   }
 }
+export async function listSources(member: Member) {
+  requireAssetAccess(member);
+  const result = await getPool().query<{ supplier_name: string }>(
+    "SELECT DISTINCT supplier_name FROM receipts WHERE supplier_name IS NOT NULL AND btrim(supplier_name)<>'' ORDER BY supplier_name ASC LIMIT 50",
+  );
+  return result.rows.map((r) => r.supplier_name);
+}
+
+export async function updateReceipt(
+  member: Member,
+  key: string,
+  id: string,
+  input: UpdateReceiptInput,
+) {
+  requireAssetAccess(member);
+  const parsed = updateReceiptSchema.parse(input);
+  return writeOnce(
+    member,
+    key,
+    `receipt.update:${id}`,
+    parsed,
+    async (client) => {
+      const header = await client.query(
+        'SELECT status,version FROM receipts WHERE id=$1 FOR UPDATE',
+        [id],
+      );
+      if (!header.rowCount) throw new AppError('NOT_FOUND', 404);
+      if (header.rows[0].version !== parsed.expected_version)
+        throw new AppError('VERSION_CONFLICT', 409);
+      if (header.rows[0].status !== 'posted') throw new AppError('INVALID_STATE', 409);
+
+      const before = await detail(client, id);
+
+      const updates: string[] = ['version=version+1'];
+      const values: unknown[] = [id];
+      if (parsed.supplier_name !== undefined) {
+        values.push(parsed.supplier_name);
+        updates.push(`supplier_name=$${values.length}`);
+      }
+      if (parsed.reference !== undefined) {
+        values.push(parsed.reference);
+        updates.push(`reference=$${values.length}`);
+      }
+      if (parsed.note !== undefined) {
+        values.push(parsed.note);
+        updates.push(`note=$${values.length}`);
+      }
+
+      await client.query(
+        `UPDATE receipts SET ${updates.join(',')} WHERE id=$1`,
+        values,
+      );
+
+      if (parsed.lines?.length) {
+        for (const line of parsed.lines) {
+          await client.query(
+            'UPDATE receipt_lines SET unit_price=$2::numeric WHERE id=$1 AND receipt_id=$3',
+            [line.id, line.unit_price ?? null, id],
+          );
+        }
+      }
+
+      const after = await detail(client, id);
+      await client.query(
+        'INSERT INTO audit_events(id,actor_id,action,entity_id,before_value,after_value,request_key) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)',
+        [
+          randomUUID(),
+          member.id,
+          'receipt.updated',
+          id,
+          JSON.stringify(before),
+          JSON.stringify(after),
+          key,
+        ],
+      );
+      return after;
+    },
+  );
+}
+
 export async function voidReceipt(
   member: Member,
   key: string,

@@ -4,6 +4,42 @@ import { formatWeight, fromMilligrams, normalizeWeightInput, toMilligrams } from
 
 const GROUPED_WEIGHT = /^\d{1,3}(?:[,٬]\d{3})+(?:\.\d{1,3})?$/;
 
+export function formatLivePriceInput(raw: string): string {
+  if (!raw) return '';
+  const normalized = raw
+    .replace(/[٠-٩]/g, (char) => String(char.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, (char) => String(char.charCodeAt(0) - 0x6f0))
+    .replace(/٫/g, '.')
+    .replace(/[,٬]/g, '');
+  if (!/^\d*(?:\.\d{0,2})?$/.test(normalized)) return raw;
+  const dotIndex = normalized.indexOf('.');
+  const whole = dotIndex === -1 ? normalized : normalized.slice(0, dotIndex);
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return dotIndex === -1 ? grouped : `${grouped}.${normalized.slice(dotIndex + 1)}`;
+}
+
+export function parseGroupedPriceInput(input: string): string {
+  if (!input) return '';
+  return input
+    .trim()
+    .replace(/[٠-٩]/g, (char) => String(char.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, (char) => String(char.charCodeAt(0) - 0x6f0))
+    .replace('٫', '.')
+    .replace(/[,٬]/g, '');
+}
+
+export function formatPrice(raw: string | number | null | undefined): string {
+  if (raw === null || raw === undefined || raw === '') return '—';
+  const str = String(raw).trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(str)) return str;
+  const plain = str.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  const negative = plain.startsWith('-');
+  const unsigned = negative ? plain.slice(1) : plain;
+  const [whole, fraction] = unsigned.split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${negative ? '-' : ''}${fraction !== undefined ? `${grouped}.${fraction}` : grouped}`;
+}
+
 export function formatLiveWeightInput(raw: string): string {
   if (!raw) return '';
   const normalized = raw
@@ -31,10 +67,7 @@ export function parseGroupedWeightInput(input: string): string {
 }
 
 export function formatGroupedWeight(canonicalWeight: string): string {
-  const plain = formatWeight(canonicalWeight);
-  const [whole, fraction] = plain.split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return fraction !== undefined ? `${grouped}.${fraction}` : grouped;
+  return formatWeight(canonicalWeight);
 }
 
 export function gramsToKgDisplay(canonicalWeight: string): string {

@@ -13,13 +13,14 @@ export const receiptInputSchema = z
   .object({
     kind: z.enum(['purchase', 'opening']),
     supplier_id: z.uuid().nullable().default(null),
+    supplier_name: z.string().trim().max(120).nullable().optional(),
     reference: z.string().trim().max(120).default(''),
     note: z.string().trim().max(1000).default(''),
     lines: z.array(line).min(1).max(25),
   })
   .strict()
   .superRefine((input, ctx) => {
-    if (input.kind === 'opening' && (input.supplier_id || input.note.length < 3 || input.reference))
+    if (input.kind === 'opening' && (input.supplier_id || input.supplier_name || input.note.length < 3 || input.reference))
       ctx.addIssue({
         code: 'custom',
         message: 'Opening balance requires a reason, no supplier or reference',
@@ -28,6 +29,22 @@ export const receiptInputSchema = z
     if (new Set(input.lines.map((l) => l.product_id)).size !== input.lines.length)
       ctx.addIssue({ code: 'custom', message: 'Duplicate product', path: ['lines'] });
   });
+export const updateReceiptSchema = z
+  .object({
+    expected_version: expectedVersionSchema,
+    supplier_name: z.string().trim().max(120).nullable().optional(),
+    reference: z.string().trim().max(120).optional(),
+    note: z.string().trim().max(1000).optional(),
+    lines: z
+      .array(
+        z.object({
+          id: z.uuid(),
+          unit_price: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/).nullable().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .strict();
 export const voidReceiptSchema = z
   .object({ expected_version: expectedVersionSchema, reason: z.string().trim().min(3).max(1000) })
   .strict();
@@ -37,6 +54,7 @@ export const receiptQuerySchema = z.object({
   cursor: cursorSchema.optional(),
 });
 export type ReceiptInput = z.infer<typeof receiptInputSchema>;
+export type UpdateReceiptInput = z.infer<typeof updateReceiptSchema>;
 export type VoidReceiptInput = z.infer<typeof voidReceiptSchema>;
 export type ReceiptQuery = z.infer<typeof receiptQuerySchema>;
 export type Receipt = {

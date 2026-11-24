@@ -1,14 +1,22 @@
 'use client';
 import { formatWeight } from '@/contracts/weight';
 import { useEffect, useRef, useState } from 'react';
+import useSWR from 'swr';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Check, PackagePlus } from 'lucide-react';
 import { receiptInputSchema, type ReceiptInput } from '@/contracts/receipts';
 import { catalogInputSchemas, type CatalogItem } from '@/contracts/catalog';
 import { useCatalogWrite } from '../catalog/use-catalog-write';
 import { normalizeWeightInput, toMilligrams, fromMilligrams } from '@/contracts/weight';
-import { formatLiveWeightInput, parseGroupedWeightInput, WeightHint } from '@/components/weight-hint';
+import {
+  formatLiveWeightInput,
+  parseGroupedWeightInput,
+  formatLivePriceInput,
+  parseGroupedPriceInput,
+  formatPrice,
+  WeightHint,
+} from '@/components/weight-hint';
 import { FormSteps } from '@/components/form-steps';
-import { CatalogPicker, WriteFeedback } from '../catalog/shared';
+import { CatalogPicker, WriteFeedback, fetchJson } from '../catalog/shared';
 import type { useReceiptWrite } from './use-receipt-write';
 import { receiptUi as r } from '@/locales/ar/receipts';
 import { workflowUi as w } from '@/locales/ar/workflow';
@@ -27,8 +35,12 @@ export function ReceiptForm({
   onClose: () => void;
 }) {
   const [step, setStep] = useState(0),
+    [sourceName, setSourceName] = useState(''),
     [reference, setReference] = useState(''),
     [note, setNote] = useState('');
+  const { data: sources = [] } = useSWR<string[]>('/api/v1/receipts/sources', fetchJson, {
+    revalidateOnFocus: false,
+  });
   const [openingReason, setOpeningReason] = useState('');
   const [lines, setLines] = useState<Line[]>([empty('first')]);
   const [review, setReview] = useState<ReceiptInput | null>(null);
@@ -107,12 +119,13 @@ export function ReceiptForm({
         const body = receiptInputSchema.parse({
           kind,
           supplier_id: null,
+          supplier_name: kind === 'purchase' ? (sourceName.trim() || null) : null,
           reference: kind === 'purchase' ? reference : '',
           note,
           lines: lines.map((l) => ({
             product_id: l.product?.id,
             quantity_g: parseGroupedWeightInput(l.weight),
-            ...(l.price ? { unit_price: l.price } : {}),
+            ...(l.price.trim() ? { unit_price: parseGroupedPriceInput(l.price) } : {}),
           })),
         });
         setReview(body);
@@ -150,6 +163,24 @@ export function ReceiptForm({
             <>
               {kind === 'purchase' ? (
                 <>
+                  <label>
+                    {r.source}
+                    <span className="optional">{ui.optional}</span>
+                    <input
+                      name="sourceName"
+                      list="receipt-sources-list"
+                      placeholder="اكتب اسم المورد أو المصدر (مثال: مفتي، بيت العود…)"
+                      value={sourceName}
+                      onChange={(e) => setSourceName(e.target.value)}
+                      maxLength={120}
+                    />
+                    <datalist id="receipt-sources-list">
+                      {sources.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                    <small className="field-hint">اكتب اسم المصدر مباشرة أو اختر من المقترحات السابقة.</small>
+                  </label>
                   <label>
                     {r.reference}
                     <span className="optional">{ui.optional}</span>
@@ -211,7 +242,7 @@ export function ReceiptForm({
             <>
               <div className="selected-source">
                 <span>{r.source}</span>
-                <strong>{kind === 'opening' ? r.opening : r.purchase}</strong>
+                <strong>{kind === 'opening' ? r.opening : (sourceName.trim() || r.purchase)}</strong>
                 {reference && <small>{reference}</small>}
               </div>
               {lines.map((line, index) => (
@@ -330,11 +361,10 @@ export function ReceiptForm({
                           inputMode="decimal"
                           dir="ltr"
                           value={line.price}
-                          maxLength={18}
+                          maxLength={25}
                           placeholder={r.priceExample}
                           onChange={(e) => {
-                            const v = e.target.value.replace(/[^\d.]/g, '');
-                            change(line.key, { price: v });
+                            change(line.key, { price: formatLivePriceInput(e.target.value) });
                           }}
                         />
                         <span>{r.currency}</span>
@@ -363,8 +393,8 @@ export function ReceiptForm({
             <div className="entry-review">
               <dl className="review-facts">
                 <div>
-                  <dt>{r.kind}</dt>
-                  <dd>{kind === 'opening' ? r.opening : r.purchase}</dd>
+                  <dt>{r.source}</dt>
+                  <dd>{kind === 'opening' ? r.opening : (sourceName.trim() || r.purchase)}</dd>
                 </div>
                 {reference && (
                   <div>
@@ -384,11 +414,11 @@ export function ReceiptForm({
                       <strong>{line.product?.name}</strong>
                     </span>
                     <strong>
-                      <bdi>{formatWeight(review.lines[i].quantity_g)}</bdi> {w.unit}
+                      <bdi dir="ltr">{formatWeight(review.lines[i].quantity_g)}</bdi> {w.unit}
                     </strong>
-                    {line.price && (
+                    {line.price.trim() && (
                       <span className="review-price">
-                        <bdi>{line.price}</bdi> {r.currency}
+                        <bdi dir="ltr">{formatPrice(parseGroupedPriceInput(line.price))}</bdi> {r.currency}
                       </span>
                     )}
                   </div>
@@ -397,7 +427,7 @@ export function ReceiptForm({
               <div className="review-total">
                 <span>{w.total}</span>
                 <strong>
-                  <bdi>{formatWeight(total)}</bdi> {w.unit}
+                  <bdi dir="ltr">{formatWeight(total)}</bdi> {w.unit}
                 </strong>
               </div>
               {note && <p className="recipe-note">{note}</p>}

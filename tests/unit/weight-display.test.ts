@@ -2,23 +2,40 @@ import { it, expect } from 'vitest';
 import { formatWeight, normalizeWeightInput } from '../../src/contracts/weight';
 import {
   formatGroupedWeight,
+  formatLivePriceInput,
   formatLiveWeightInput,
+  formatPrice,
   gramsToKgDisplay,
+  parseGroupedPriceInput,
   parseGroupedWeightInput,
 } from '../../src/components/weight-hint';
-it('shows only significant fractional digits without rounding or losing large weights', () => {
+it('shows only significant fractional digits with 3-digit grouping without rounding or losing large weights', () => {
   for (const [input, expected] of [
     ['980.000', '980'],
     ['980.250', '980.25'],
     ['0.001', '0.001'],
-    ['1000.010', '1000.01'],
-    ['999999999999999.999', '999999999999999.999'],
+    ['1000.010', '1,000.01'],
+    ['2312323.000', '2,312,323'],
+    ['999999999999999.999', '999,999,999,999,999.999'],
+    ['-2000.000', '-2,000'],
     ['-20.000', '-20'],
     ['0.000', '0'],
   ]) {
     expect(formatWeight(input)).toBe(expected);
-    if (!input.startsWith('-')) expect(normalizeWeightInput(formatWeight(input))).toBe(input);
+    if (!input.startsWith('-')) expect(parseGroupedWeightInput(formatWeight(input))).toBe(input);
   }
+  expect(normalizeWeightInput('1000.01')).toBe('1000.010');
+});
+
+it('formats and parses prices with 3-digit commas cleanly', () => {
+  expect(formatPrice('2312323.00')).toBe('2,312,323');
+  expect(formatPrice('2312323.50')).toBe('2,312,323.5');
+  expect(formatPrice('1500.25')).toBe('1,500.25');
+  expect(formatPrice(null)).toBe('—');
+  expect(formatLivePriceInput('2312323')).toBe('2,312,323');
+  expect(formatLivePriceInput('2312323.5')).toBe('2,312,323.5');
+  expect(formatLivePriceInput('٢٣١٢٣٢٣')).toBe('2,312,323');
+  expect(parseGroupedPriceInput('2,312,323.50')).toBe('2312323.50');
 });
 
 it('parses strictly grouped 3-digit commas and formats kg equivalents accurately', () => {

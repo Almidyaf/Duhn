@@ -51,10 +51,40 @@ export function CatalogManager({
     refreshInterval: 0,
   });
 
-  const write = useCatalogWrite(userId, async () => {
+  const write = useCatalogWrite(userId, async (result, request) => {
     setOpen(false);
     setDeleteTarget(null);
-    await mutate();
+    const saved = (
+      result && typeof result === 'object' && 'item' in result
+        ? (result as { item: CatalogItem }).item
+        : result && typeof result === 'object' && 'id' in result
+          ? (result as CatalogItem)
+          : null
+    );
+    if (request?.method === 'DELETE') {
+      const deletedId = request.url.split('/').pop();
+      await mutate(
+        (prev) =>
+          prev
+            ? { ...prev, items: prev.items.filter((item) => item.id !== deletedId) }
+            : prev,
+        { revalidate: false },
+      );
+    } else if (saved?.id && !search && !cursor) {
+      await mutate(
+        (prev) => {
+          if (!prev) return prev;
+          const exists = prev.items.some((item) => item.id === saved.id);
+          const items = exists
+            ? prev.items.map((item) => (item.id === saved.id ? saved : item))
+            : [saved, ...prev.items].slice(0, 25);
+          return { ...prev, items };
+        },
+        { revalidate: false },
+      );
+    } else {
+      void mutate();
+    }
   });
 
   useEffect(() => {

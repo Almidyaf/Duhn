@@ -39,7 +39,7 @@ export function ProductionOrderDetailView({
 
   const write = useProductionWrite(userId, async () => {
     setOvenOpen(false);
-    await mutate();
+    void mutate();
   });
 
   const locked = write.locked || !!error || isLoading;

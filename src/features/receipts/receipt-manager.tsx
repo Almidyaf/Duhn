@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { Plus, X, Search, PackagePlus } from 'lucide-react';
-import type { ReceiptPage } from '@/contracts/receipts';
+import type { ReceiptDetail, ReceiptPage } from '@/contracts/receipts';
 import type { Cursor } from '@/contracts/catalog';
 import { receiptUi as r } from '@/locales/ar/receipts';
 import { ui } from '@/locales/ar/ui';
@@ -39,9 +39,26 @@ export function ReceiptManager({
     fallbackData: url === '/api/v1/receipts?q=&status=all' ? initial : undefined,
     refreshInterval: 0,
   });
-  const write = useReceiptWrite(userId, async () => {
+  const write = useReceiptWrite(userId, async (result) => {
     setOpen(false);
-    await mutate();
+    const created =
+      result && typeof result === 'object' && 'receipt' in result
+        ? (result as ReceiptDetail).receipt
+        : null;
+    if (created && !search && status !== 'voided' && !cursor) {
+      await mutate(
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                items: [created, ...prev.items.filter((item) => item.id !== created.id)].slice(0, 25),
+              }
+            : prev,
+        { revalidate: false },
+      );
+    } else {
+      void mutate();
+    }
   });
   useEffect(() => {
     const timer = setTimeout(() => {

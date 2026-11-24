@@ -6,8 +6,8 @@ const config: NextConfig = {
   turbopack: { root: process.cwd() },
   experimental: {
     staleTimes: {
-      dynamic: 300,
-      static: 600,
+      dynamic: 0,
+      static: 180,
     },
   },
   async headers() {

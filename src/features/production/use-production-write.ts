@@ -9,7 +9,7 @@ import {
 } from '@/contracts/fermentation';
 import { productionUi as p } from '@/locales/ar/production';
 import { ovenStartSchema } from '@/contracts/oven';
-import { useDurableWrite } from '../shared/use-durable-write';
+import { useDurableWrite, type Pending } from '../shared/use-durable-write';
 const schema = z
   .object({
     key: z.uuid(),
@@ -34,7 +34,10 @@ const schema = z
                 : false;
     if (!valid) ctx.addIssue({ code: 'custom', message: 'Invalid production recovery request' });
   });
-export function useProductionWrite(userId: string, onSaved: () => Promise<unknown>) {
+export function useProductionWrite(
+  userId: string,
+  onSaved: (result?: unknown, request?: Pending) => Promise<unknown>,
+) {
   return useDurableWrite(userId, onSaved, {
     namespace: 'production',
     schema,

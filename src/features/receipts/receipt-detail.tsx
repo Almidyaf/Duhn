@@ -3,11 +3,12 @@ import { formatWeight } from '@/contracts/weight';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { ArrowRight, X } from 'lucide-react';
-import type { ReceiptDetail } from '@/contracts/receipts';
-import { voidReceiptSchema } from '@/contracts/receipts';
+import { ArrowRight, Pencil, X } from 'lucide-react';
+import type { Receipt, ReceiptDetail, ReceiptLine, UpdateReceiptInput } from '@/contracts/receipts';
+import { updateReceiptSchema, voidReceiptSchema } from '@/contracts/receipts';
 import { receiptUi as r } from '@/locales/ar/receipts';
 import { ui } from '@/locales/ar/ui';
+import { formatLivePriceInput, formatPrice, parseGroupedPriceInput } from '@/components/weight-hint';
 import { fetchJson, WriteFeedback } from '../catalog/shared';
 import { PurchaseNav } from './purchase-nav';
 import { useReceiptWrite } from './use-receipt-write';
@@ -27,12 +28,21 @@ export function ReceiptDetailView({
   } = useSWR<ReceiptDetail>(`/api/v1/receipts/${initial.receipt.id}`, fetchJson, {
     fallbackData: initial,
   });
+  const { data: sources = [] } = useSWR<string[]>('/api/v1/receipts/sources', fetchJson, {
+    revalidateOnFocus: false,
+  });
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
-  const write = useReceiptWrite(userId, async () => {
+  const write = useReceiptWrite(userId, async (result) => {
     setOpen(false);
-    await mutate();
+    setEditOpen(false);
+    if (result && typeof result === 'object' && 'receipt' in result && 'lines' in result) {
+      await mutate(result as ReceiptDetail, { revalidate: false });
+    } else {
+      void mutate();
+    }
   });
   useEffect(() => {
     if (open) dialog.current?.showModal();
@@ -111,6 +121,7 @@ export function ReceiptDetailView({
               <tr>
                 <th>{r.product}</th>
                 <th>{r.lot}</th>
+                <th>{r.unitPrice}</th>
                 <th>{r.quantity}</th>
                 <th>{r.balance}</th>
               </tr>
@@ -123,6 +134,13 @@ export function ReceiptDetailView({
                     <small className="cell-subtitle">{line.type_name}</small>
                   </td>
                   <td dir="ltr">LOT-{line.lot_code.padStart(4, '0')}</td>
+                  <td>
+                    {line.unit_price ? (
+                      <><strong dir="ltr">{formatPrice(line.unit_price)}</strong> {r.currency}</>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td>
                     <span dir="ltr">{formatWeight(line.quantity_g)}</span> {r.gram}
                   </td>
@@ -144,19 +162,47 @@ export function ReceiptDetailView({
       {receipt.status === 'posted' && (
         <div className="receipt-actions">
           <p className="muted">{r.noReverse}</p>
-          <button
-            className="secondary-button"
-            disabled={!canReverse || write.locked || !!error}
-            onClick={() => {
-              setVersion(receipt.version);
-              write.setError('');
-              setOpen(true);
-            }}
-          >
-            {r.reverse}
-          </button>
+          <div className="button-row">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={write.locked || !!error}
+              onClick={() => {
+                write.setError('');
+                setEditOpen(true);
+              }}
+            >
+              <Pencil size={16} />
+              تعديل بيانات السجل
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!canReverse || write.locked || !!error}
+              onClick={() => {
+                setVersion(receipt.version);
+                write.setError('');
+                setOpen(true);
+              }}
+            >
+              {r.reverse}
+            </button>
+          </div>
         </div>
       )}
+      <EditReceiptDialog
+        open={editOpen}
+        receipt={receipt}
+        lines={data.lines}
+        sources={sources}
+        onClose={() => setEditOpen(false)}
+        onSubmit={async (payload) => {
+          await write.submit(`/api/v1/receipts/${receipt.id}`, 'PATCH', payload);
+        }}
+        locked={write.locked}
+        busy={write.busy}
+        writeError={write.error}
+      />
       <dialog
         ref={dialog}
         className="asset-dialog"
@@ -210,5 +256,188 @@ export function ReceiptDetailView({
         </form>
       </dialog>
     </>
+  );
+}
+
+function EditReceiptDialog({
+  open,
+  receipt,
+  lines,
+  sources,
+  onClose,
+  onSubmit,
+  locked,
+  busy,
+  writeError,
+}: {
+  open: boolean;
+  receipt: Receipt;
+  lines: ReceiptLine[];
+  sources: string[];
+  onClose: () => void;
+  onSubmit: (payload: UpdateReceiptInput) => Promise<void>;
+  locked: boolean;
+  busy: boolean;
+  writeError: string;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [supplierName, setSupplierName] = useState(receipt.supplier_name ?? '');
+  const [reference, setReference] = useState(receipt.reference ?? '');
+  const [note, setNote] = useState(receipt.note ?? '');
+  const [linePrices, setLinePrices] = useState<Record<string, string>>({});
+  const [localError, setLocalError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setSupplierName(receipt.supplier_name ?? '');
+      setReference(receipt.reference ?? '');
+      setNote(receipt.note ?? '');
+      const initialPrices: Record<string, string> = {};
+      for (const l of lines) {
+        initialPrices[l.id] = l.unit_price ? formatPrice(l.unit_price) : '';
+      }
+      setLinePrices(initialPrices);
+      setLocalError('');
+      dialogRef.current?.showModal();
+    } else {
+      dialogRef.current?.close();
+    }
+  }, [open, receipt, lines]);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (locked) return;
+    setLocalError('');
+    const payload: Record<string, unknown> = {
+      expected_version: receipt.version,
+      note: note.trim(),
+    };
+    if (receipt.kind === 'purchase') {
+      payload.supplier_name = supplierName.trim() || null;
+      payload.reference = reference.trim();
+      payload.lines = lines.map((l) => {
+        const raw = (linePrices[l.id] ?? '').trim();
+        return {
+          id: l.id,
+          unit_price: raw ? parseGroupedPriceInput(raw) : null,
+        };
+      });
+    }
+    const parsed = updateReceiptSchema.safeParse(payload);
+    if (!parsed.success) {
+      setLocalError(r.errors.INVALID_INPUT);
+      return;
+    }
+    await onSubmit(parsed.data);
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="asset-dialog"
+      aria-labelledby="edit-receipt-title"
+      onCancel={(e) => {
+        if (busy) e.preventDefault();
+        else onClose();
+      }}
+      onClose={onClose}
+    >
+      <div className="dialog-heading">
+        <h2 id="edit-receipt-title">تعديل بيانات السجل</h2>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={ui.cancel}
+          disabled={busy}
+          onClick={onClose}
+        >
+          <X size={20} />
+        </button>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <fieldset className="plain-fieldset" disabled={busy}>
+          {receipt.kind === 'purchase' && (
+            <>
+              <label>
+                {r.source}
+                <span className="optional">{ui.optional}</span>
+                <input
+                  list="edit-receipt-sources-list"
+                  placeholder="اكتب اسم المورد أو المصدر…"
+                  value={supplierName}
+                  onChange={(e) => setSupplierName(e.target.value)}
+                  maxLength={120}
+                />
+                <datalist id="edit-receipt-sources-list">
+                  {sources.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                {r.reference}
+                <span className="optional">{ui.optional}</span>
+                <input
+                  placeholder={r.referenceExample}
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  maxLength={120}
+                />
+              </label>
+              {lines.map((line) => (
+                <label key={line.id}>
+                  سعر الوحدة — {line.product_name} (LOT-{line.lot_code.padStart(4, '0')})
+                  <span className="optional">{ui.optional}</span>
+                  <span className="weight-input">
+                    <input
+                      inputMode="decimal"
+                      dir="ltr"
+                      maxLength={25}
+                      placeholder={r.priceExample}
+                      value={linePrices[line.id] ?? ''}
+                      onChange={(e) =>
+                        setLinePrices((prev) => ({
+                          ...prev,
+                          [line.id]: formatLivePriceInput(e.target.value),
+                        }))
+                      }
+                    />
+                    <span>{r.currency}</span>
+                  </span>
+                </label>
+              ))}
+            </>
+          )}
+          <label>
+            {r.note}
+            <span className="optional">{ui.optional}</span>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              maxLength={1000}
+            />
+          </label>
+        </fieldset>
+        {(localError || writeError) && (
+          <p className="notice danger" role="alert">
+            {localError || writeError}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button className="primary-button" disabled={locked}>
+            {busy ? ui.saving : ui.save}
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busy}
+            onClick={onClose}
+          >
+            {ui.cancel}
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }

@@ -2,7 +2,14 @@ import { z } from 'zod';
 
 export function formatWeight(value: string | null | undefined): string {
   if (value == null) return '—';
-  return value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  const trimmed = value.trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(trimmed)) return value;
+  const plain = trimmed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  const negative = plain.startsWith('-');
+  const unsigned = negative ? plain.slice(1) : plain;
+  const [whole, fraction] = unsigned.split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${negative ? '-' : ''}${fraction !== undefined ? `${grouped}.${fraction}` : grouped}`;
 }
 
 // Canonical API weights are decimal strings, never IEEE-754 quantities.

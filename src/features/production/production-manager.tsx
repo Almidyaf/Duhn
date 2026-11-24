@@ -83,7 +83,7 @@ export function ProductionManager({
 
   const write = useProductionWrite(userId, async () => {
     setOpen(false);
-    await mutate();
+    void mutate();
   });
 
   useEffect(() => {

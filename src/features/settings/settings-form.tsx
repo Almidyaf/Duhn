@@ -18,9 +18,13 @@ export function SettingsForm({
   timezones: string[];
 }) {
   const [settings, setSettings] = useState(initial);
-  const write = useConfigurationWrite(userId, async () =>
-    setSettings(await fetchJson<FactorySettings>('/api/v1/settings')),
-  );
+  const write = useConfigurationWrite(userId, async (result) => {
+    if (result && typeof result === 'object' && 'version' in result) {
+      setSettings(result as FactorySettings);
+    } else {
+      setSettings(await fetchJson<FactorySettings>('/api/v1/settings'));
+    }
+  });
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (write.locked || !isOwner) return;

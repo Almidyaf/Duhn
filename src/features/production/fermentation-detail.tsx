@@ -71,7 +71,7 @@ export function FermentationDetailView({
     setConfirmed(false);
     setWeight('');
     setCursor(null);
-    await mutate();
+    void mutate();
   });
   const withdrawn = fromMilligrams(toMilligrams(f.quantity_g) - toMilligrams(f.balance_g));
   let remainingAfter: string | null = null;

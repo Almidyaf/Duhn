@@ -1,6 +1,6 @@
 'use client';
 import { formatWeight } from '@/contracts/weight';
-import { KgBadge } from '@/components/weight-hint';
+import { KgBadge, formatPrice } from '@/components/weight-hint';
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
@@ -97,7 +97,7 @@ export function RawStock({ initial }: { initial: RawLotPage }) {
                       </td>
                       <td>
                         {lot.unit_price ? (
-                          <><strong dir="ltr">{lot.unit_price}</strong> {r.currency}</>
+                          <><strong dir="ltr">{formatPrice(lot.unit_price)}</strong> {r.currency}</>
                         ) : '—'}
                       </td>
                       <td>
